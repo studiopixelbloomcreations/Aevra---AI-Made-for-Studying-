@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+from urllib.parse import quote_plus
 
 import requests
 from groq import Groq
@@ -12,6 +13,7 @@ from user_personalization_router import store as personalization_store
 
 assistant_memory: Dict[str, List[Dict[str, str]]] = {}
 assistant_user_facts: Dict[str, Dict[str, str]] = {}
+assistant_integrations: Dict[str, Dict[str, Any]] = {}
 
 
 def _email_key(email: Optional[str]) -> str:
@@ -37,6 +39,33 @@ def _extract_user_facts(message: str) -> Dict[str, str]:
             val = f"Grade {val}"
         out[key] = val
     return out
+
+
+def _extract_home_address(message: str) -> Optional[str]:
+    text = (message or "").strip()
+    patterns = [
+        r"\bset home (?:to|as) ([A-Za-z0-9 ,./#'\-]{6,180})",
+        r"\bmy home is at ([A-Za-z0-9 ,./#'\-]{6,180})",
+        r"\bhome address is ([A-Za-z0-9 ,./#'\-]{6,180})",
+        r"\bi live at ([A-Za-z0-9 ,./#'\-]{6,180})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).strip().rstrip(".")
+    return None
+
+
+def _ensure_integration_state(email_key: str) -> Dict[str, Any]:
+    assistant_integrations.setdefault(
+        email_key,
+        {
+            "spotify_connected": False,
+            "google_maps_connected": True,
+            "home_address": "",
+        },
+    )
+    return assistant_integrations[email_key]
 
 
 def _google_search_snippets(query: str, max_results: int = 3) -> List[Dict[str, str]]:
@@ -75,6 +104,76 @@ def _google_search_snippets(query: str, max_results: int = 3) -> List[Dict[str, 
         return []
 
 
+def _detect_task_action(user_msg: str, integrations: Dict[str, Any], known_facts: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    text = (user_msg or "").strip().lower()
+    spotify_auth_url = os.environ.get("SPOTIFY_AUTH_URL", "").strip()
+
+    if "connect spotify" in text or "link spotify" in text:
+        return {
+            "type": "connect_spotify",
+            "requires_connection": True,
+            "service": "spotify",
+            "oauth_url": spotify_auth_url or None,
+            "message": "I can connect Spotify now. Please authorize Spotify to continue.",
+        }
+
+    if "play" in text and ("liked playlist" in text or "liked songs" in text or "spotify" in text):
+        if not integrations.get("spotify_connected"):
+            return {
+                "type": "play_spotify_liked",
+                "requires_connection": True,
+                "service": "spotify",
+                "oauth_url": spotify_auth_url or None,
+                "message": "I need Spotify connected first. Please connect Spotify.",
+            }
+        return {
+            "type": "play_spotify_liked",
+            "requires_connection": False,
+            "service": "spotify",
+            "message": "Spotify is connected. I am preparing your liked playlist.",
+        }
+
+    if "set home" in text or "save home" in text:
+        extracted = _extract_home_address(user_msg)
+        if extracted:
+            return {
+                "type": "save_home_address",
+                "requires_connection": False,
+                "service": "maps",
+                "home_address": extracted,
+                "message": f"Got it. I saved your home as {extracted}.",
+            }
+        return {
+            "type": "save_home_address",
+            "requires_connection": False,
+            "service": "maps",
+            "message": "Please tell me your home address so I can save it.",
+        }
+
+    directions_trigger = (
+        ("direction" in text or "directions" in text) and ("home" in text)
+    ) or ("get me home" in text) or ("navigate home" in text)
+    if directions_trigger:
+        home = integrations.get("home_address") or known_facts.get("home_address") or ""
+        if not home:
+            return {
+                "type": "directions_home",
+                "requires_connection": False,
+                "service": "maps",
+                "message": "I need your home address first. Say: set home to <your address>.",
+            }
+        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={quote_plus(str(home))}&travelmode=driving"
+        return {
+            "type": "directions_home",
+            "requires_connection": False,
+            "service": "maps",
+            "maps_url": maps_url,
+            "message": "Opening Google Maps directions to your home.",
+        }
+
+    return None
+
+
 def ask_tutor_personal_agent(
     message: str,
     email: Optional[str],
@@ -90,17 +189,26 @@ def ask_tutor_personal_agent(
     email_key = _email_key(email)
     assistant_memory.setdefault(email_key, [])
     assistant_user_facts.setdefault(email_key, {})
+    integrations = _ensure_integration_state(email_key)
 
     learned = _extract_user_facts(user_msg)
     if learned:
         assistant_user_facts[email_key].update(learned)
+    home_extracted = _extract_home_address(user_msg)
+    if home_extracted:
+        integrations["home_address"] = home_extracted
+        assistant_user_facts[email_key]["home_address"] = home_extracted
 
     snapshot = personalization_store.get_user_snapshot(email_key)
     profile = snapshot.get("profile") or {}
     progress = snapshot.get("progress") or {}
     feedback = snapshot.get("feedback") or {}
 
-    web_context = _google_search_snippets(user_msg, max_results=3)
+    action = _detect_task_action(user_msg, integrations, assistant_user_facts[email_key])
+    should_search = True
+    if action and action.get("type") in {"play_spotify_liked", "connect_spotify", "directions_home", "save_home_address"}:
+        should_search = False
+    web_context = _google_search_snippets(user_msg, max_results=3) if should_search else []
 
     hist = history or assistant_memory[email_key][-20:]
     history_text = "\n".join([f"{m.get('role','user')}: {m.get('content','')}" for m in hist[-20:]])
@@ -123,9 +231,12 @@ def ask_tutor_personal_agent(
         f"Conversation title: {chat_title}",
         f"User profile: {profile}",
         f"Known facts: {assistant_user_facts[email_key]}",
+        f"Integration state: {integrations}",
         f"Progress summary: total_questions={progress.get('total_questions', 0)}, total_correct={progress.get('total_correct', 0)}, total_score={progress.get('total_score', 0)}",
         f"Feedback summary: {feedback}",
     ]
+    if action:
+        prompt_parts.append(f"Detected assistant task action: {action}")
     if history_text:
         prompt_parts.append("Recent conversation:\n" + history_text)
     if web_context:
@@ -134,18 +245,22 @@ def ask_tutor_personal_agent(
     user_prompt = "\n\n".join(prompt_parts)
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-    try:
-        response = client.chat.completions.create(
-            model="moonshotai/kimi-k2-instruct-0905",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.6,
-        )
-        answer = (response.choices[0].message.content or "").strip()
-    except Exception as e:
-        return {"error": f"Assistant request failed: {str(e)}"}
+    # For strong command intents, use deterministic assistant response first.
+    if action and action.get("message"):
+        answer = str(action.get("message"))
+    else:
+        try:
+            response = client.chat.completions.create(
+                model="moonshotai/kimi-k2-instruct-0905",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.6,
+            )
+            answer = (response.choices[0].message.content or "").strip()
+        except Exception as e:
+            return {"error": f"Assistant request failed: {str(e)}"}
 
     assistant_memory[email_key].append({"role": "user", "content": user_msg})
     assistant_memory[email_key].append({"role": "assistant", "content": answer})
@@ -156,4 +271,43 @@ def ask_tutor_personal_agent(
         "used_google_context": bool(web_context),
         "google_results": web_context,
         "learned_facts": learned,
+        "action": action,
+        "integration_state": integrations,
     }
+
+
+def get_personal_assistant_status(email: Optional[str]) -> Dict[str, Any]:
+    email_key = _email_key(email)
+    state = _ensure_integration_state(email_key)
+    return {
+        "email": email_key,
+        "assistant_name": "Tutor",
+        "section_name": "Perosnla IIntelligence",
+        "integration_state": state,
+        "known_facts": assistant_user_facts.get(email_key, {}),
+    }
+
+
+def connect_service(email: Optional[str], service: str) -> Dict[str, Any]:
+    email_key = _email_key(email)
+    state = _ensure_integration_state(email_key)
+    svc = (service or "").strip().lower()
+    if svc == "spotify":
+        state["spotify_connected"] = True
+        return {"ok": True, "service": "spotify", "connected": True}
+    if svc in {"maps", "google_maps", "google maps"}:
+        state["google_maps_connected"] = True
+        return {"ok": True, "service": "google_maps", "connected": True}
+    return {"ok": False, "error": "Unsupported service"}
+
+
+def set_home_address(email: Optional[str], address: str) -> Dict[str, Any]:
+    email_key = _email_key(email)
+    state = _ensure_integration_state(email_key)
+    addr = (address or "").strip()
+    if not addr:
+        return {"ok": False, "error": "Address is required"}
+    state["home_address"] = addr
+    assistant_user_facts.setdefault(email_key, {})
+    assistant_user_facts[email_key]["home_address"] = addr
+    return {"ok": True, "home_address": addr}

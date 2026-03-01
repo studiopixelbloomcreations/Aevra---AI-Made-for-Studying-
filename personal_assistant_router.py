@@ -3,7 +3,12 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from personal_assistant_service import ask_tutor_personal_agent
+from personal_assistant_service import (
+    ask_tutor_personal_agent,
+    connect_service,
+    get_personal_assistant_status,
+    set_home_address,
+)
 
 
 router = APIRouter(prefix="/personal-intelligence", tags=["personal-intelligence"])
@@ -18,6 +23,16 @@ class PersonalAssistantAskRequest(BaseModel):
     history: Optional[List[Dict[str, str]]] = None
 
 
+class ConnectServicePayload(BaseModel):
+    email: Optional[str] = "guest@student.com"
+    service: str
+
+
+class HomeAddressPayload(BaseModel):
+    email: Optional[str] = "guest@student.com"
+    address: str
+
+
 @router.post("/ask")
 async def personal_assistant_ask(req: PersonalAssistantAskRequest):
     return ask_tutor_personal_agent(
@@ -28,3 +43,18 @@ async def personal_assistant_ask(req: PersonalAssistantAskRequest):
         title=req.title,
         history=req.history,
     )
+
+
+@router.get("/status")
+async def personal_assistant_status(email: str = "guest@student.com"):
+    return get_personal_assistant_status(email=email)
+
+
+@router.post("/connect")
+async def personal_assistant_connect(req: ConnectServicePayload):
+    return connect_service(email=req.email, service=req.service)
+
+
+@router.post("/set-home")
+async def personal_assistant_set_home(req: HomeAddressPayload):
+    return set_home_address(email=req.email, address=req.address)
