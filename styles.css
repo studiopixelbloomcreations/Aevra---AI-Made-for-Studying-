@@ -4447,29 +4447,36 @@ body {
 /* Personal Intelligence visual assistant (Tutor) */
 .pi-panel {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  width: 320px;
-  max-width: calc(100vw - 32px);
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: linear-gradient(160deg, rgba(17, 24, 39, 0.85), rgba(30, 41, 59, 0.8));
-  backdrop-filter: blur(12px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  border: 0;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(99, 102, 241, 0.24), rgba(0, 0, 0, 0) 35%),
+    radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.2), rgba(0, 0, 0, 0) 32%),
+    linear-gradient(160deg, rgba(2, 6, 23, 0.95), rgba(15, 23, 42, 0.94));
+  backdrop-filter: blur(14px);
+  box-shadow: none;
   z-index: 1200;
-  padding: 12px;
+  padding: 26px;
   display: none;
+  grid-template-rows: auto 1fr auto auto;
+  overflow: hidden;
 }
 
 .pi-panel.show {
-  display: block;
+  display: grid;
 }
 
 .pi-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 16px;
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
 }
 
 .pi-section {
@@ -4479,7 +4486,7 @@ body {
 }
 
 .pi-name {
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 800;
   color: #f8fafc;
 }
@@ -4495,16 +4502,18 @@ body {
 }
 
 .pi-orb-wrap {
-  margin-top: 10px;
+  margin-top: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 14px;
+  min-height: 42vh;
 }
 
 .pi-orb {
-  width: 108px;
-  height: 108px;
+  width: 180px;
+  height: 180px;
   border-radius: 999px;
   border: 0;
   background: radial-gradient(circle at 30% 20%, #c4b5fd, #7c3aed 50%, #1d4ed8);
@@ -4516,8 +4525,8 @@ body {
 }
 
 .pi-orb-core {
-  width: 42px;
-  height: 42px;
+  width: 72px;
+  height: 72px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.8);
 }
@@ -4555,14 +4564,19 @@ body {
 
 .pi-state {
   color: #e2e8f0;
-  font-size: 12px;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .pi-controls {
-  margin-top: 10px;
+  margin-top: 8px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 12px;
+  max-width: 680px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .pi-btn {
@@ -4570,19 +4584,32 @@ body {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   color: #f8fafc;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
-  padding: 8px 10px;
+  padding: 12px 14px;
   cursor: pointer;
 }
 
+.pi-realtime-connect {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.38), rgba(124, 58, 237, 0.38));
+}
+
+.pi-realtime-disconnect {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.34), rgba(190, 24, 93, 0.34));
+}
+
 .pi-log {
-  margin-top: 10px;
-  max-height: 170px;
+  margin-top: 16px;
+  max-height: 34vh;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  max-width: 980px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 6px;
 }
 
 .pi-log-row {

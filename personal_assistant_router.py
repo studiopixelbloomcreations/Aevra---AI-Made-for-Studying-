@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from personal_assistant_service import (
     ask_tutor_personal_agent,
     connect_service,
+    create_openai_realtime_session,
     get_personal_assistant_status,
     set_home_address,
 )
@@ -33,6 +34,10 @@ class HomeAddressPayload(BaseModel):
     address: str
 
 
+class RealtimeSessionPayload(BaseModel):
+    email: Optional[str] = "guest@student.com"
+
+
 @router.post("/ask")
 async def personal_assistant_ask(req: PersonalAssistantAskRequest):
     return ask_tutor_personal_agent(
@@ -58,3 +63,8 @@ async def personal_assistant_connect(req: ConnectServicePayload):
 @router.post("/set-home")
 async def personal_assistant_set_home(req: HomeAddressPayload):
     return set_home_address(email=req.email, address=req.address)
+
+
+@router.post("/realtime/session")
+async def personal_assistant_realtime_session(req: RealtimeSessionPayload):
+    return create_openai_realtime_session(email=req.email)

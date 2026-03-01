@@ -174,6 +174,22 @@ def _detect_task_action(user_msg: str, integrations: Dict[str, Any], known_facts
     return None
 
 
+def _fallback_conversation_response(user_msg: str, action: Optional[Dict[str, Any]], web_context: List[Dict[str, str]]) -> str:
+    if action and action.get("message"):
+        return str(action.get("message"))
+
+    msg = (user_msg or "").strip()
+    low = msg.lower()
+    if any(g in low for g in ["hi", "hello", "hey tutor", "how are you"]):
+        return "Hey, I am Tutor. I am here with you. We can chat, plan your day, or handle tasks like directions and music."
+    if "homework" in low or "study" in low or "exam" in low:
+        return "Absolutely. Tell me the subject and exact question, and I will teach it step by step like a friendly teacher."
+    if web_context:
+        top = web_context[0]
+        return f"I found this: {top.get('title','Result')} - {top.get('snippet','')}"
+    return "I am here and listening. Tell me what you want to do, and I will help you right away."
+
+
 def ask_tutor_personal_agent(
     message: str,
     email: Optional[str],
@@ -260,7 +276,7 @@ def ask_tutor_personal_agent(
             )
             answer = (response.choices[0].message.content or "").strip()
         except Exception as e:
-            return {"error": f"Assistant request failed: {str(e)}"}
+            answer = _fallback_conversation_response(user_msg, action, web_context)
 
     assistant_memory[email_key].append({"role": "user", "content": user_msg})
     assistant_memory[email_key].append({"role": "assistant", "content": answer})
@@ -311,3 +327,65 @@ def set_home_address(email: Optional[str], address: str) -> Dict[str, Any]:
     assistant_user_facts.setdefault(email_key, {})
     assistant_user_facts[email_key]["home_address"] = addr
     return {"ok": True, "home_address": addr}
+
+
+def create_openai_realtime_session(email: Optional[str]) -> Dict[str, Any]:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "OPENAI_API_KEY is missing on backend environment",
+        }
+
+    model = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime").strip() or "gpt-realtime"
+    voice = os.environ.get("OPENAI_REALTIME_VOICE", "alloy").strip() or "alloy"
+
+    email_key = _email_key(email)
+    state = _ensure_integration_state(email_key)
+    home = state.get("home_address") or ""
+
+    instructions = (
+        "You are Tutor, a warm personal assistant. "
+        "Keep a natural conversational tone, like a real friendly human assistant. "
+        "Help with everyday tasks and study support. "
+        "If asked for directions home and home address is known, mention that maps can be opened. "
+        f"Known home address: {home if home else 'not set'}."
+    )
+
+    payload = {
+        "model": model,
+        "voice": voice,
+        "modalities": ["text", "audio"],
+        "instructions": instructions,
+    }
+
+    try:
+        res = requests.post(
+            "https://api.openai.com/v1/realtime/sessions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=20,
+        )
+        data = res.json() if res.content else {}
+    except Exception as e:
+        return {"ok": False, "error": f"Failed to create realtime session: {str(e)}"}
+
+    if res.status_code >= 400:
+        msg = data.get("error", {}).get("message") if isinstance(data, dict) else None
+        return {
+            "ok": False,
+            "error": msg or f"Realtime session failed with HTTP {res.status_code}",
+            "status_code": res.status_code,
+        }
+
+    client_secret = data.get("client_secret") if isinstance(data, dict) else None
+    return {
+        "ok": True,
+        "model": model,
+        "voice": voice,
+        "client_secret": client_secret,
+        "session": data,
+    }

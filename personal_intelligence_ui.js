@@ -14,6 +14,11 @@
   let recognition = null;
   let speaking = false;
   let assistantOpen = false;
+  let realtimeConnected = false;
+  let realtimePc = null;
+  let realtimeDc = null;
+  let realtimeStream = null;
+  let realtimeAudio = null;
 
   let integrationState = {
     spotify_connected: false,
@@ -40,6 +45,8 @@
     <div class="pi-controls">
       <button class="pi-btn pi-listen" type="button">Start Listening</button>
       <button class="pi-btn pi-stop" type="button">Stop Voice</button>
+      <button class="pi-btn pi-realtime-connect" type="button">Connect ChatGPT Voice</button>
+      <button class="pi-btn pi-realtime-disconnect" type="button">Disconnect ChatGPT Voice</button>
     </div>
     <div class="pi-log" aria-live="polite"></div>
   `;
@@ -50,6 +57,8 @@
   const stateEl = panel.querySelector(".pi-state");
   const listenBtn = panel.querySelector(".pi-listen");
   const stopBtn = panel.querySelector(".pi-stop");
+  const realtimeConnectBtn = panel.querySelector(".pi-realtime-connect");
+  const realtimeDisconnectBtn = panel.querySelector(".pi-realtime-disconnect");
   const logEl = panel.querySelector(".pi-log");
 
   function isExamModeEnabled() {
@@ -267,6 +276,139 @@
     stopSpeaking();
   }
 
+  function disconnectRealtimeVoice() {
+    try {
+      if (realtimeDc) realtimeDc.close();
+    } catch (e) {}
+    try {
+      if (realtimePc) realtimePc.close();
+    } catch (e) {}
+    try {
+      if (realtimeStream) realtimeStream.getTracks().forEach(function (t) { t.stop(); });
+    } catch (e) {}
+    try {
+      if (realtimeAudio) {
+        realtimeAudio.pause();
+        realtimeAudio.srcObject = null;
+      }
+    } catch (e) {}
+    realtimeConnected = false;
+    realtimeDc = null;
+    realtimePc = null;
+    realtimeStream = null;
+    realtimeAudio = null;
+    setAssistantState("idle", "Idle");
+    addLog("assistant", "Tutor: ChatGPT voice disconnected.");
+  }
+
+  async function connectRealtimeVoice() {
+    if (realtimeConnected) return;
+    setAssistantState("thinking", "Connecting ChatGPT voice...");
+    addLog("assistant", "Tutor: Connecting ChatGPT voice...");
+
+    let session;
+    try {
+      session = await fetchJson("/personal-intelligence/realtime/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: EMAIL }),
+      });
+    } catch (e) {
+      setAssistantState("idle", "Idle");
+      addLog("assistant", "Tutor: Could not create realtime session.");
+      return;
+    }
+
+    if (!session || !session.ok || !session.client_secret || !session.client_secret.value) {
+      const errMsg = (session && session.error) ? String(session.error) : "Realtime session unavailable.";
+      setAssistantState("idle", "Idle");
+      addLog("assistant", "Tutor: " + errMsg);
+      return;
+    }
+
+    const ephemeralKey = session.client_secret.value;
+    const model = session.model || "gpt-realtime";
+    const realtimeUrl = "https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model);
+
+    try {
+      realtimePc = new RTCPeerConnection();
+      realtimeAudio = document.createElement("audio");
+      realtimeAudio.autoplay = true;
+      realtimeAudio.style.display = "none";
+      document.body.appendChild(realtimeAudio);
+
+      realtimePc.ontrack = function (ev) {
+        try {
+          realtimeAudio.srcObject = ev.streams[0];
+          setAssistantState("speaking", "Speaking");
+        } catch (e) {}
+      };
+
+      realtimeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      realtimeStream.getTracks().forEach(function (track) {
+        realtimePc.addTrack(track, realtimeStream);
+      });
+
+      realtimeDc = realtimePc.createDataChannel("oai-events");
+      realtimeDc.onopen = function () {
+        realtimeConnected = true;
+        setAssistantState("idle", "Voice Connected");
+        addLog("assistant", "Tutor: ChatGPT voice connected. Speak naturally.");
+        try {
+          realtimeDc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions:
+                  "You are Tutor, a warm personal assistant. Keep replies natural, short, and helpful.",
+              },
+            })
+          );
+        } catch (e) {}
+      };
+      realtimeDc.onmessage = function (ev) {
+        try {
+          const event = JSON.parse(ev.data);
+          if (event && event.type === "input_audio_buffer.speech_started") {
+            setAssistantState("listening", "Listening");
+          } else if (event && event.type === "input_audio_buffer.speech_stopped") {
+            setAssistantState("thinking", "Thinking");
+          } else if (event && event.type === "response.done") {
+            setAssistantState("idle", "Voice Connected");
+          } else if (event && event.type === "conversation.item.input_audio_transcription.completed") {
+            if (event.transcript) addLog("user", "You: " + event.transcript);
+          } else if (event && event.type === "response.audio_transcript.done") {
+            if (event.transcript) addLog("assistant", "Tutor: " + event.transcript);
+          }
+        } catch (e) {}
+      };
+      realtimeDc.onclose = function () {
+        realtimeConnected = false;
+        setAssistantState("idle", "Idle");
+      };
+
+      const offer = await realtimePc.createOffer();
+      await realtimePc.setLocalDescription(offer);
+
+      const sdpResp = await fetch(realtimeUrl, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: "Bearer " + ephemeralKey,
+          "Content-Type": "application/sdp",
+        },
+      });
+      if (!sdpResp.ok) {
+        throw new Error("Failed to connect realtime voice");
+      }
+      const answerSdp = await sdpResp.text();
+      await realtimePc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    } catch (e) {
+      addLog("assistant", "Tutor: Realtime voice connection failed.");
+      disconnectRealtimeVoice();
+    }
+  }
+
   tabBtn.addEventListener("click", function () {
     setEnabled(!enabled);
     togglePanel(enabled);
@@ -288,6 +430,15 @@
 
   stopBtn.addEventListener("click", function () {
     stopListening();
+  });
+
+  realtimeConnectBtn.addEventListener("click", function () {
+    if (!enabled) return;
+    connectRealtimeVoice();
+  });
+
+  realtimeDisconnectBtn.addEventListener("click", function () {
+    disconnectRealtimeVoice();
   });
 
   sendBtn.addEventListener(
