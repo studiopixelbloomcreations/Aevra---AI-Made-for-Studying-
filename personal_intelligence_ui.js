@@ -6,13 +6,15 @@
   const EMAIL = "guest@student.com";
   const IDLE_TIMEOUT_MS = 15000;
 
-  let enabled = localStorage.getItem(STORAGE_KEY) === "true";
+  // Start closed by default on every page load.
+  let enabled = false;
   let realtimeConnected = false;
   let realtimePc = null;
   let realtimeDc = null;
   let realtimeStream = null;
   let realtimeAudio = null;
   let idleTimer = null;
+  let responseWatchdog = null;
 
   const panel = document.createElement("div");
   panel.className = "pi-panel";
@@ -22,6 +24,7 @@
         <div class="pi-section">Perosnla IIntelligence</div>
         <div class="pi-name">Tutor</div>
       </div>
+      <button class="pi-close" type="button" aria-label="Close assistant">x</button>
     </div>
     <div class="pi-orb-wrap">
       <button class="pi-orb idle" type="button" aria-label="Activate Tutor">
@@ -34,8 +37,17 @@
   document.body.appendChild(panel);
 
   const orbBtn = panel.querySelector(".pi-orb");
+  const closeBtn = panel.querySelector(".pi-close");
   const stateEl = panel.querySelector(".pi-state");
   const logEl = panel.querySelector(".pi-log");
+
+  function dbg() {
+    try {
+      const args = Array.prototype.slice.call(arguments);
+      args.unshift("[PerosnlaIIntelligence]");
+      console.log.apply(console, args);
+    } catch (e) {}
+  }
 
   function addLog(role, text) {
     const row = document.createElement("div");
@@ -58,6 +70,26 @@
     }
   }
 
+  function clearResponseWatchdog() {
+    if (responseWatchdog) {
+      clearTimeout(responseWatchdog);
+      responseWatchdog = null;
+    }
+  }
+
+  function armResponseWatchdog() {
+    clearResponseWatchdog();
+    responseWatchdog = setTimeout(function () {
+      // If we didn't get a response event, force one.
+      try {
+        if (realtimeDc && realtimeDc.readyState === "open") {
+          dbg("response watchdog fired -> sending response.create");
+          realtimeDc.send(JSON.stringify({ type: "response.create" }));
+        }
+      } catch (e) {}
+    }, 3500);
+  }
+
   function armIdleTimer() {
     clearIdleTimer();
     idleTimer = setTimeout(function () {
@@ -74,6 +106,7 @@
 
   function disconnectRealtimeVoice() {
     clearIdleTimer();
+    clearResponseWatchdog();
     try { if (realtimeDc) realtimeDc.close(); } catch (e) {}
     try { if (realtimePc) realtimePc.close(); } catch (e) {}
     try {
@@ -93,6 +126,7 @@
     realtimeStream = null;
     realtimeAudio = null;
     setAssistantState("idle", "Idle");
+    dbg("realtime disconnected");
   }
 
   function setEnabled(next) {
@@ -102,6 +136,7 @@
     tabBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
     panel.classList.toggle("show", enabled);
     if (!enabled) disconnectRealtimeVoice();
+    dbg("enabled:", enabled);
   }
 
   function activateListening() {
@@ -113,6 +148,7 @@
     setAssistantState("listening", "Listening");
     armIdleTimer();
     addLog("assistant", "Tutor: Listening...");
+    dbg("manual activate listening");
   }
 
   async function connectRealtimeVoice() {
@@ -130,12 +166,14 @@
     } catch (e) {
       setAssistantState("idle", "Idle");
       addLog("assistant", "Tutor: Could not create realtime session.");
+      dbg("session create failed", e);
       return;
     }
 
     if (!session || !session.ok || !session.client_secret || !session.client_secret.value) {
       setAssistantState("idle", "Idle");
       addLog("assistant", "Tutor: " + (session && session.error ? String(session.error) : "Realtime session unavailable."));
+      dbg("session invalid", session);
       return;
     }
 
@@ -153,8 +191,10 @@
       realtimePc.ontrack = function (ev) {
         try {
           realtimeAudio.srcObject = ev.streams[0];
+          realtimeAudio.play().catch(function(){});
           setAssistantState("speaking", "Speaking");
           armIdleTimer();
+          dbg("ontrack received");
         } catch (e) {}
       };
 
@@ -169,6 +209,7 @@
         setAssistantState("listening", "Listening");
         addLog("assistant", "Tutor: Connected. Speak now.");
         armIdleTimer();
+        dbg("datachannel open");
         try {
           realtimeDc.send(
             JSON.stringify({
@@ -184,9 +225,13 @@
                   create_response: true,
                   interrupt_response: true
                 },
+                input_audio_transcription: {
+                  model: "gpt-4o-mini-transcribe"
+                }
               },
             })
           );
+          dbg("session.update sent");
         } catch (e) {}
       };
 
@@ -194,25 +239,42 @@
         try {
           const event = JSON.parse(ev.data);
           if (!event || !event.type) return;
+          dbg("event", event.type);
           if (event.type === "input_audio_buffer.speech_started") {
             setAssistantState("listening", "Listening");
             armIdleTimer();
           } else if (event.type === "input_audio_buffer.speech_stopped") {
             setAssistantState("thinking", "Thinking");
             armIdleTimer();
+            armResponseWatchdog();
             try {
               realtimeDc.send(JSON.stringify({ type: "response.create" }));
+              dbg("response.create sent after speech_stopped");
+            } catch (e) {}
+          } else if (event.type === "input_audio_buffer.committed") {
+            setAssistantState("thinking", "Thinking");
+            armIdleTimer();
+            armResponseWatchdog();
+            try {
+              realtimeDc.send(JSON.stringify({ type: "response.create" }));
+              dbg("response.create sent after committed");
             } catch (e) {}
           } else if (event.type === "response.audio_transcript.done") {
             if (event.transcript) addLog("assistant", "Tutor: " + event.transcript);
             setAssistantState("speaking", "Speaking");
             armIdleTimer();
+            clearResponseWatchdog();
           } else if (event.type === "conversation.item.input_audio_transcription.completed") {
             if (event.transcript) addLog("user", "You: " + event.transcript);
             armIdleTimer();
           } else if (event.type === "response.done") {
             setAssistantState("listening", "Listening");
             armIdleTimer();
+            clearResponseWatchdog();
+          } else if (event.type === "error") {
+            setAssistantState("idle", "Idle");
+            addLog("assistant", "Tutor: Voice error. Tap the orb to retry.");
+            dbg("realtime error event", event);
           }
         } catch (e) {}
       };
@@ -220,6 +282,8 @@
       realtimeDc.onclose = function () {
         realtimeConnected = false;
         setAssistantState("idle", "Idle");
+        clearResponseWatchdog();
+        dbg("datachannel closed");
       };
 
       const offer = await realtimePc.createOffer();
@@ -235,8 +299,10 @@
       if (!sdpResp.ok) throw new Error("Failed realtime SDP");
       const answerSdp = await sdpResp.text();
       await realtimePc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      dbg("remote description set, realtime connected");
     } catch (e) {
       addLog("assistant", "Tutor: Realtime voice connection failed.");
+      dbg("connectRealtimeVoice failed", e);
       disconnectRealtimeVoice();
     }
   }
@@ -246,12 +312,15 @@
     if (enabled) connectRealtimeVoice();
   });
 
+  closeBtn.addEventListener("click", function () {
+    setEnabled(false);
+  });
+
   orbBtn.addEventListener("click", function () {
     activateListening();
   });
 
-  setEnabled(enabled);
-  if (enabled) connectRealtimeVoice();
+  setEnabled(false);
   try {
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
   } catch (e) {}
