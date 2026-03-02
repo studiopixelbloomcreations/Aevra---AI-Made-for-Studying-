@@ -7,7 +7,7 @@
   "main": "desktop/main.js",
   "scripts": {
     "desktop": "electron .",
-    "desktop:url": "set APP_START_URL=https://officialtutorai.netlify.app/&& electron .",
+    "desktop:url": "set APP_START_URL=https://newtutorai.netlify.app/&& electron .",
     "desktop:build": "electron-builder --win nsis",
     "desktop:publish": "electron-builder --win nsis --publish always"
   },
@@ -35,6 +35,7 @@
     "asar": true,
     "files": [
       "desktop/**/*",
+      "node_modules/**/*",
       "*.html",
       "*.css",
       "*.js",

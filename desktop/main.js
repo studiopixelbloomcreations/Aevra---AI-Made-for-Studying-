@@ -1,14 +1,16 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { exec } = require("child_process");
 const { autoUpdater } = require("electron-updater");
 
-const DEFAULT_START_URL = "https://officialtutorai.netlify.app/";
-const EVOLUTION_THRESHOLD = 100;
+const DEFAULT_START_URL = "https://newtutorai.netlify.app/";
 
 let mainWindow = null;
 let updateNoticeShown = false;
+
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app.commandLine.appendSwitch("enable-speech-dispatcher");
 
 function getStorePath() {
   return path.join(app.getPath("userData"), "desktop_runtime_store.json");
@@ -19,18 +21,12 @@ function loadStore() {
   try {
     if (!fs.existsSync(p)) {
       return {
-        line_counter: 0,
-        evolution_threshold: EVOLUTION_THRESHOLD,
-        proposals: [],
         audit: [],
       };
     }
     return JSON.parse(fs.readFileSync(p, "utf-8"));
   } catch (e) {
     return {
-      line_counter: 0,
-      evolution_threshold: EVOLUTION_THRESHOLD,
-      proposals: [],
       audit: [],
     };
   }
@@ -66,16 +62,55 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
+      spellcheck: true,
+      backgroundThrottling: false,
     },
   });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      if (url) shell.openExternal(url);
+    } catch (e) {}
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_e, details) => {
+    dialog.showErrorBox(
+      "Renderer crashed",
+      `The app renderer crashed (${details && details.reason ? details.reason : "unknown"}). It will reload.`
+    );
+    try { mainWindow.reload(); } catch (e) {}
+  });
+
+  mainWindow.webContents.on("unresponsive", () => {
+    dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      buttons: ["Wait", "Reload"],
+      defaultId: 0,
+      cancelId: 0,
+      title: "App not responding",
+      message: "Tutor desktop is not responding.",
+      detail: "Choose Reload if it stays frozen for more than a few seconds.",
+      noLink: true,
+    }).then((r) => {
+      if (r.response === 1) {
+        try { mainWindow.reload(); } catch (e) {}
+      }
+    });
+  });
+
   const target = getStartTarget();
-  if (target.type === "file") {
-    mainWindow.loadFile(target.value);
-  } else {
-    mainWindow.loadURL(target.value);
-  }
+  Promise.resolve()
+    .then(() => mainWindow.webContents.session.clearCache().catch(() => {}))
+    .then(() => {
+      if (target.type === "file") return mainWindow.loadFile(target.value);
+      return mainWindow.loadURL(target.value);
+    })
+    .catch(() => {
+      if (target.type === "file") mainWindow.loadFile(target.value).catch(() => {});
+      else mainWindow.loadURL(target.value).catch(() => {});
+    });
 }
 
 function setupAutoUpdater() {
@@ -174,7 +209,6 @@ ipcMain.handle("assistant:get_capabilities", async () => {
     can_open_explorer: true,
     can_open_urls: true,
     creator_approval_required: true,
-    evolution_threshold: EVOLUTION_THRESHOLD,
   };
 });
 
@@ -197,77 +231,36 @@ ipcMain.handle("assistant:execute_action", async (_event, action) => {
   return result;
 });
 
-ipcMain.handle("evolution:report_delta", async (_event, payload) => {
-  const lines = Math.max(0, Number((payload && payload.lines) || 0));
-  if (!Number.isFinite(lines) || lines <= 0) return { ok: true, triggered: false };
-
-  const store = loadStore();
-  const threshold = Number(store.evolution_threshold || EVOLUTION_THRESHOLD);
-  store.line_counter = Number(store.line_counter || 0) + lines;
-  let triggered = false;
-
-  while (store.line_counter >= threshold) {
-    store.line_counter -= threshold;
-    triggered = true;
-    const proposal = {
-      id: `proposal_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-      at: new Date().toISOString(),
-      status: "pending_creator_approval",
-      trigger_lines: threshold,
-      context: payload && payload.context ? String(payload.context).slice(0, 500) : "",
-      note: "AI requested an evolution cycle after threshold activity.",
-    };
-    store.proposals = Array.isArray(store.proposals) ? store.proposals : [];
-    store.proposals.push(proposal);
-    pushAudit(store, { kind: "evolution_triggered", proposal_id: proposal.id, trigger_lines: threshold });
-  }
-
-  saveStore(store);
-  return { ok: true, triggered, line_counter: store.line_counter };
-});
-
-ipcMain.handle("evolution:list", async () => {
-  const store = loadStore();
-  return {
-    ok: true,
-    line_counter: Number(store.line_counter || 0),
-    threshold: Number(store.evolution_threshold || EVOLUTION_THRESHOLD),
-    proposals: Array.isArray(store.proposals) ? store.proposals.slice(-100) : [],
-  };
-});
-
-ipcMain.handle("evolution:audit", async () => {
-  const store = loadStore();
-  return {
-    ok: true,
-    audit: Array.isArray(store.audit) ? store.audit.slice(-300) : [],
-  };
-});
-
-ipcMain.handle("evolution:approve", async (_event, proposalId) => {
-  const store = loadStore();
-  const proposals = Array.isArray(store.proposals) ? store.proposals : [];
-  const idx = proposals.findIndex((p) => p && p.id === proposalId);
-  if (idx < 0) return { ok: false, error: "Proposal not found" };
-
-  const approved = await promptCreatorApproval(
-    "Approve evolution proposal",
-    `Proposal ID: ${proposalId}\nThis marks the proposal as approved for your external patch pipeline.`
-  );
-  if (!approved) return { ok: false, denied: true, error: "Creator denied proposal approval" };
-
-  proposals[idx].status = "creator_approved";
-  proposals[idx].approved_at = new Date().toISOString();
-  store.proposals = proposals;
-  pushAudit(store, { kind: "evolution_approved", proposal_id: proposalId });
-  saveStore(store);
-  return { ok: true, proposal: proposals[idx] };
-});
-
 app.whenReady().then(() => {
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = new Set([
+      "media",
+      "clipboard-read",
+      "clipboard-sanitized-write",
+      "notifications",
+      "fullscreen",
+      "pointerLock",
+    ]);
+    callback(allowed.has(permission));
+  });
+  ses.setPermissionCheckHandler((_webContents, permission) => {
+    const allowed = new Set([
+      "media",
+      "clipboard-read",
+      "clipboard-sanitized-write",
+      "notifications",
+      "fullscreen",
+      "pointerLock",
+    ]);
+    return allowed.has(permission);
+  });
+
   createWindow();
   setupAutoUpdater();
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }, 6000);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

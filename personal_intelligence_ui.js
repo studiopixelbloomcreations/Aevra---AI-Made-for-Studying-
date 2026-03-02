@@ -48,14 +48,6 @@
       <div class="pi-state">Idle</div>
     </div>
     <div class="pi-log" aria-live="polite"></div>
-    <div class="pi-creator" style="display:none">
-      <div class="pi-creator-head">
-        <div class="pi-creator-title">Creator Control</div>
-        <button class="pi-btn pi-creator-refresh" type="button">Refresh</button>
-      </div>
-      <div class="pi-creator-meta"></div>
-      <div class="pi-creator-proposals"></div>
-    </div>
     <input class="pi-hidden-file-input" type="file" multiple style="display:none" />
   `;
   document.body.appendChild(panel);
@@ -65,12 +57,7 @@
   const orbCanvas = panel.querySelector(".pi-orb-canvas");
   const stateEl = panel.querySelector(".pi-state");
   const logEl = panel.querySelector(".pi-log");
-  const creatorWrap = panel.querySelector(".pi-creator");
-  const creatorMeta = panel.querySelector(".pi-creator-meta");
-  const creatorProposals = panel.querySelector(".pi-creator-proposals");
-  const creatorRefreshBtn = panel.querySelector(".pi-creator-refresh");
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
-  let creatorPoll = null;
 
   function dbg() {
     try {
@@ -127,19 +114,6 @@
     convoHistory.push({ role: role === "assistant" ? "assistant" : "user", content: String(content || "").slice(0, 1200) });
     if (convoHistory.length > 20) convoHistory = convoHistory.slice(-20);
     saveMemory();
-    reportEvolutionDelta(String(content || ""));
-  }
-
-  function reportEvolutionDelta(text) {
-    try {
-      if (!window.DesktopAssistant || !window.DesktopAssistant.reportEvolutionDelta) return;
-      const lines = Math.max(1, Math.ceil(String(text || "").length / 80));
-      window.DesktopAssistant.reportEvolutionDelta(lines, "personal_intelligence_interaction").then(function (r) {
-        if (r && r.triggered) {
-          addLog("assistant", "Tutor: Evolution threshold reached. Creator approval is needed in desktop runtime.");
-        }
-      }).catch(function () {});
-    } catch (e) {}
   }
 
   function setAssistantState(kind, label) {
@@ -355,55 +329,6 @@
     if (vizCtx) vizCtx.clearRect(0, 0, vizW || 0, vizH || 0);
   }
 
-  async function refreshCreatorPanel() {
-    try {
-      if (!window.DesktopAssistant || !window.DesktopAssistant.listEvolution) {
-        creatorWrap.style.display = "none";
-        return;
-      }
-      creatorWrap.style.display = "block";
-      const info = await window.DesktopAssistant.listEvolution();
-      const proposals = (info && info.proposals) ? info.proposals.slice().reverse() : [];
-      creatorMeta.textContent = "Line Counter: " + (info && Number(info.line_counter || 0)) + " / " + (info && Number(info.threshold || 100));
-      creatorProposals.innerHTML = "";
-      if (!proposals.length) {
-        creatorProposals.textContent = "No pending proposals.";
-        return;
-      }
-      proposals.slice(0, 8).forEach(function (p) {
-        const row = document.createElement("div");
-        row.className = "pi-proposal-row";
-        const status = String((p && p.status) || "unknown");
-        row.innerHTML =
-          '<div class="pi-proposal-text">' +
-          '<div><strong>' + String((p && p.id) || "proposal") + "</strong></div>" +
-          '<div>Status: ' + status + "</div>" +
-          '<div>At: ' + String((p && p.at) || "") + "</div>" +
-          "</div>";
-        if (status === "pending_creator_approval") {
-          const b = document.createElement("button");
-          b.className = "pi-btn";
-          b.type = "button";
-          b.textContent = "Approve";
-          b.addEventListener("click", async function () {
-            try {
-              const r = await window.DesktopAssistant.approveEvolution(String(p.id));
-              if (r && r.ok) addLog("assistant", "Tutor: Evolution proposal approved by creator.");
-              else addLog("assistant", "Tutor: Evolution approval failed.");
-              refreshCreatorPanel();
-            } catch (e) {
-              addLog("assistant", "Tutor: Evolution approval error.");
-            }
-          });
-          row.appendChild(b);
-        }
-        creatorProposals.appendChild(row);
-      });
-    } catch (e) {
-      creatorWrap.style.display = "none";
-    }
-  }
-
   function setEnabled(next) {
     enabled = !!next;
     panel.classList.toggle("show", enabled);
@@ -415,10 +340,6 @@
       stopSpeakerAnalyser();
       stopMicAnalyser();
       stopOrbVisualization();
-      if (creatorPoll) {
-        clearInterval(creatorPoll);
-        creatorPoll = null;
-      }
       try {
         if (recognition) recognition.abort();
       } catch (e) {}
@@ -426,8 +347,6 @@
     } else {
       startOrbVisualization();
       ensureMicAnalyser();
-      refreshCreatorPanel();
-      if (!creatorPoll) creatorPoll = setInterval(refreshCreatorPanel, 12000);
     }
     dbg("enabled:", enabled);
   }
@@ -651,12 +570,6 @@
   orbBtn.addEventListener("click", function () {
     startListening();
   });
-
-  if (creatorRefreshBtn) {
-    creatorRefreshBtn.addEventListener("click", function () {
-      refreshCreatorPanel();
-    });
-  }
 
   loadMemory();
   setEnabled(false);
