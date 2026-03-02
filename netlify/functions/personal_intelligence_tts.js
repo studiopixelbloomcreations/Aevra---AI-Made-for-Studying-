@@ -2,7 +2,7 @@ function audio(statusCode, bodyBuffer, contentType) {
   return {
     statusCode,
     headers: {
-      "content-type": contentType || "audio/mpeg",
+      "content-type": contentType || "audio/wav",
       "access-control-allow-origin": "*",
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type,authorization",
@@ -27,19 +27,41 @@ function json(statusCode, obj) {
   };
 }
 
+function pcm16ToWav(pcmBuffer, sampleRate, channels) {
+  const bitsPerSample = 16;
+  const blockAlign = (channels * bitsPerSample) / 8;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = pcmBuffer.length;
+  const wav = Buffer.alloc(44 + dataSize);
+
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write("WAVE", 8);
+  wav.write("fmt ", 12);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(channels, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(byteRate, 28);
+  wav.writeUInt16LE(blockAlign, 32);
+  wav.writeUInt16LE(bitsPerSample, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataSize, 40);
+  pcmBuffer.copy(wav, 44);
+  return wav;
+}
+
 exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  const apiKey = String(process.env.SPEECHIFY_API_KEY || "").trim();
-  const defaultVoiceId = String(process.env.SPEECHIFY_VOICE_ID || "").trim();
-  const defaultAudioFormat = String(process.env.SPEECHIFY_AUDIO_FORMAT || "mp3").trim();
-  const defaultLanguage = String(process.env.SPEECHIFY_LANGUAGE || "").trim();
-  const defaultModel = String(process.env.SPEECHIFY_MODEL || "").trim();
-  const baseUrl = String(process.env.SPEECHIFY_API_BASE || "https://api.sws.speechify.com").trim();
-  const endpointPath = String(process.env.SPEECHIFY_TTS_PATH || "/v1/audio/speech").trim();
-  if (!apiKey || !defaultVoiceId) {
-    return json(500, { ok: false, error: "SPEECHIFY_API_KEY or SPEECHIFY_VOICE_ID missing in Netlify environment" });
+  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
+  const baseUrl = String(process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").trim();
+  const model = String(process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts").trim();
+  const defaultVoice = String(process.env.GEMINI_TTS_VOICE || "Kore").trim();
+  const defaultSampleRate = Number(process.env.GEMINI_TTS_SAMPLE_RATE || 24000);
+  if (!apiKey) {
+    return json(500, { ok: false, error: "GEMINI_API_KEY missing in Netlify environment" });
   }
 
   let payload = {};
@@ -49,59 +71,67 @@ exports.handler = async function handler(event) {
     return json(400, { error: "Invalid JSON body" });
   }
   const text = String((payload && payload.text) || "").trim();
-  const voiceId = String((payload && payload.voice_id) || defaultVoiceId).trim();
-  const audioFormat = String((payload && payload.audio_format) || defaultAudioFormat).trim();
-  const language = String((payload && payload.language) || defaultLanguage).trim();
-  const model = String((payload && payload.model) || defaultModel).trim();
+  const voiceName = String((payload && payload.voice_name) || defaultVoice).trim();
+  const sampleRate = Number((payload && payload.sample_rate) || defaultSampleRate || 24000);
+
   if (!text) return json(400, { error: "text is required" });
-  if (!voiceId) return json(400, { error: "voice_id is required" });
+  if (!voiceName) return json(400, { error: "voice_name is required" });
 
   try {
-    const speechifyPayload = {
-      input: text,
-      voice_id: voiceId,
-      audio_format: audioFormat,
-    };
-    if (language) speechifyPayload.language = language;
-    if (model) speechifyPayload.model = model;
-
-    const resp = await fetch(baseUrl + endpointPath, {
+    const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const resp = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(speechifyPayload),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      }),
     });
 
+    const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      const errTxt = await resp.text().catch(() => "");
-      return json(502, {
-        ok: false,
-        error: `Speechify TTS failed (HTTP ${resp.status})`,
-        detail: errTxt.slice(0, 500),
-      });
-    }
-    const contentType = (resp.headers.get("content-type") || "").toLowerCase();
-    if (contentType.includes("application/json")) {
-      const data = await resp.json().catch(() => ({}));
-      const audioData = data && data.audio_data ? String(data.audio_data) : "";
-      if (!audioData) {
-        return json(502, {
-          ok: false,
-          error: "Speechify returned JSON without audio_data",
-          detail: data,
-        });
-      }
-      const buf = Buffer.from(audioData, "base64");
-      return audio(200, buf, audioFormat === "wav" ? "audio/wav" : "audio/mpeg");
+      const detail = (data && data.error && data.error.message) ? String(data.error.message) : `HTTP ${resp.status}`;
+      return json(502, { ok: false, error: `Gemini TTS failed: ${detail}` });
     }
 
-    const ab = await resp.arrayBuffer();
-    const buf = Buffer.from(ab);
-    const ctype = resp.headers.get("content-type") || (audioFormat === "wav" ? "audio/wav" : "audio/mpeg");
-    return audio(200, buf, ctype);
+    const parts =
+      data &&
+      data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      Array.isArray(data.candidates[0].content.parts)
+        ? data.candidates[0].content.parts
+        : [];
+
+    let inlineData = null;
+    for (const p of parts) {
+      const a = p && (p.inlineData || p.inline_data);
+      if (a && a.data) {
+        inlineData = a;
+        break;
+      }
+    }
+    if (!inlineData || !inlineData.data) {
+      return json(502, { ok: false, error: "Gemini TTS returned no audio data." });
+    }
+
+    const mime = String((inlineData.mimeType || inlineData.mime_type || "")).toLowerCase();
+    const raw = Buffer.from(String(inlineData.data), "base64");
+
+    if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3") || mime.includes("ogg")) {
+      return audio(200, raw, mime || "audio/wav");
+    }
+
+    const wav = pcm16ToWav(raw, Number.isFinite(sampleRate) ? sampleRate : 24000, 1);
+    return audio(200, wav, "audio/wav");
   } catch (e) {
-    return json(502, { ok: false, error: `Speechify request failed: ${String(e.message || e)}` });
+    return json(502, { ok: false, error: `Gemini TTS request failed: ${String(e.message || e)}` });
   }
 };

@@ -113,51 +113,81 @@ function fallbackReply(message) {
   return "I am here and listening. Tell me what you want to do, and I will help you right away.";
 }
 
-async function groqChatReply(message, history, language, subject) {
-  const apiKey = String(process.env.GROQ_API_KEY || "").trim();
-  if (!apiKey) return fallbackReply(message);
+async function geminiChatReply(message, history, language, subject) {
+  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: "GEMINI_API_KEY missing in Netlify environment.",
+      answer: fallbackReply(message),
+    };
+  }
 
-  const msgs = [];
-  msgs.push({
-    role: "system",
-    content:
-      `You are Tutor, a warm and capable personal assistant for a student. Speak in ${language}. Keep responses short, natural, and conversational. Be helpful for daily tasks and study support in ${subject}.`,
-  });
+  const model = String(process.env.GEMINI_PERSONAL_MODEL || "gemini-2.5-flash").trim();
+  const baseUrl = String(process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").trim();
+  const systemInstruction =
+    `You are Tutor, a warm and capable personal assistant for a student. Speak in ${language}. ` +
+    `Keep replies short, natural, and practical. Help with daily tasks and study support in ${subject}.`;
+
+  const contents = [];
   const h = Array.isArray(history) ? history.slice(-8) : [];
   for (const item of h) {
     if (!item || !item.role || !item.content) continue;
-    const role = item.role === "assistant" ? "assistant" : "user";
-    msgs.push({ role, content: String(item.content).slice(0, 1200) });
+    contents.push({
+      role: item.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(item.content).slice(0, 1200) }],
+    });
   }
-  msgs.push({ role: "user", content: String(message || "") });
+  contents.push({ role: "user", parts: [{ text: String(message || "") }] });
 
   try {
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: process.env.GROQ_PERSONAL_MODEL || process.env.GROQ_MODEL || "llama-3.1-8b-instant",
-        messages: msgs,
-        temperature: 0.6,
-        max_tokens: 350,
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents,
+        generationConfig: {
+          temperature: 0.6,
+          maxOutputTokens: 350,
+        },
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) return fallbackReply(message);
-    return (
+    if (!res.ok) {
+      const detail =
+        (data && data.error && data.error.message) ? String(data.error.message) : `HTTP ${res.status}`;
+      return {
+        ok: false,
+        error: `Gemini request failed: ${detail}`,
+        answer: fallbackReply(message),
+      };
+    }
+
+    const parts =
       data &&
-      data.choices &&
-      data.choices[0] &&
-      data.choices[0].message &&
-      data.choices[0].message.content
-    )
-      ? String(data.choices[0].message.content)
-      : fallbackReply(message);
+      data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      Array.isArray(data.candidates[0].content.parts)
+        ? data.candidates[0].content.parts
+        : [];
+    const answer = parts.map((p) => (p && p.text ? String(p.text) : "")).join("").trim();
+    if (!answer) {
+      return {
+        ok: false,
+        error: "Gemini returned an empty answer.",
+        answer: fallbackReply(message),
+      };
+    }
+    return { ok: true, answer, error: "" };
   } catch (e) {
-    return fallbackReply(message);
+    return {
+      ok: false,
+      error: `Gemini request failed: ${String(e.message || e)}`,
+      answer: fallbackReply(message),
+    };
   }
 }
 
@@ -179,10 +209,14 @@ exports.handler = async function handler(event) {
   if (!message) return json(200, { error: "Message cannot be empty" });
 
   const action = detectAction(message, history);
-  const answer = action && action.message ? String(action.message) : await groqChatReply(message, history, language, subject);
+  const gemini = action ? null : await geminiChatReply(message, history, language, subject);
+  const answer = action && action.message ? String(action.message) : gemini.answer;
 
   return json(200, {
     answer,
+    ai_provider: action ? "local_action" : "gemini",
+    ai_ok: action ? true : !!gemini.ok,
+    ai_error: action ? "" : String(gemini.error || ""),
     used_google_context: false,
     google_results: [],
     learned_facts: {},

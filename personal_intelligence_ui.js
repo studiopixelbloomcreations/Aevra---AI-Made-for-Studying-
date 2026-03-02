@@ -14,7 +14,7 @@
   panel.innerHTML = `
     <div class="pi-header">
       <div class="pi-title-wrap">
-        <div class="pi-section">Perosnla IIntelligence</div>
+        <div class="pi-section">Personal Intelligence</div>
         <div class="pi-name">Tutor</div>
       </div>
       <button class="pi-close" type="button" aria-label="Close assistant">x</button>
@@ -37,7 +37,7 @@
   function dbg() {
     try {
       const args = Array.prototype.slice.call(arguments);
-      args.unshift("[PerosnlaIIntelligence]");
+      args.unshift("[PersonalIntelligence]");
       console.log.apply(console, args);
     } catch (e) {}
   }
@@ -118,7 +118,14 @@
             body: JSON.stringify({ text }),
           }));
 
-      if (!res.ok) throw new Error("Speechify TTS request failed");
+      if (!res.ok) {
+        let detail = "Gemini TTS request failed";
+        try {
+          const err = await res.json();
+          if (err && (err.error || err.detail)) detail = String(err.error || err.detail);
+        } catch (e) {}
+        throw new Error(detail);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       tutorAudio = new Audio(url);
@@ -128,10 +135,12 @@
       tutorAudio.onended = function () {
         setAssistantState("listening", "Listening");
         armIdleTimer();
+        try { URL.revokeObjectURL(url); } catch (e) {}
       };
       await tutorAudio.play();
     } catch (e) {
-      dbg("Speechify failed, fallback to browser TTS", e && e.message);
+      dbg("Gemini TTS failed, fallback to browser TTS", e && e.message);
+      addLog("assistant", "Tutor: Voice engine fallback (" + String((e && e.message) || "TTS error") + ").");
       try {
         const u = new SpeechSynthesisUtterance(String(text || ""));
         u.onstart = function () { setAssistantState("speaking", "Speaking"); };
@@ -159,11 +168,14 @@
           email: EMAIL,
           language: localStorage.getItem("g9_language") || "English",
           subject: localStorage.getItem("g9_subject") || "General",
-          title: "Perosnla IIntelligence",
+          title: "Personal Intelligence",
         }),
       });
       const answer = data && data.answer ? String(data.answer) : "I did not get that. Please try again.";
       addLog("assistant", "Tutor: " + answer);
+      if (data && data.ai_provider && data.ai_provider !== "local_action") {
+        dbg("AI provider:", data.ai_provider, "ok:", data.ai_ok, "error:", data.ai_error || "");
+      }
       await playTutorTTS(answer);
     } catch (e) {
       addLog("assistant", "Tutor: Request failed. Please try again.");
