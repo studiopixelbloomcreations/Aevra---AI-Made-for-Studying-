@@ -185,13 +185,14 @@ function knownFactsToPrompt(facts) {
   return rows.length ? rows.join("\n") : "none";
 }
 
-async function groqChatReply(message, history, language, subject, knownFacts) {
+async function groqFallbackChatReply(message, history, language, subject, knownFacts) {
   const apiKey = String(process.env.GROQ_API_KEY || "").trim();
   if (!apiKey) {
     return {
       ok: false,
       error: "GROQ_API_KEY missing in Netlify environment.",
       answer: fallbackReply(message),
+      provider: "none",
     };
   }
 
@@ -259,14 +260,130 @@ async function groqChatReply(message, history, language, subject, knownFacts) {
         answer: fallbackReply(message),
       };
     }
-    return { ok: true, answer, speak_text: buildSpeakText(answer), error: "" };
+    return { ok: true, answer, speak_text: buildSpeakText(answer), error: "", provider: "groq" };
   } catch (e) {
     return {
       ok: false,
       error: `Groq request failed: ${String(e.message || e)}`,
       answer: fallbackReply(message),
       speak_text: buildSpeakText(fallbackReply(message)),
+      provider: "none",
     };
+  }
+}
+
+async function openRouterChatReply(message, history, language, subject, knownFacts) {
+  const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
+  if (!apiKey) {
+    const fb = await groqFallbackChatReply(message, history, language, subject, knownFacts);
+    return Object.assign({}, fb, {
+      provider: fb.ok ? "groq_fallback" : "none",
+      error: fb.ok ? "OPENROUTER_API_KEY missing; used Groq fallback." : fb.error,
+    });
+  }
+
+  const model = String(process.env.OPENROUTER_PERSONAL_MODEL || "openrouter/free").trim();
+  const maxOutputTokens = Number(process.env.OPENROUTER_PERSONAL_MAX_TOKENS || 140);
+  const baseUrl = String(process.env.OPENROUTER_API_BASE || "https://openrouter.ai").trim();
+  const siteUrl = String(process.env.OPENROUTER_SITE_URL || "").trim();
+  const appTitle = String(process.env.OPENROUTER_APP_TITLE || "Tutor Personal Intelligence").trim();
+  const systemInstruction =
+    `You are Tutor, a warm and capable personal assistant for a student. Speak in ${language}. ` +
+    `Keep replies short, natural, and practical. Default to 1-2 short sentences unless the user asks for detailed steps. ` +
+    `Help with daily tasks and study support in ${subject}. ` +
+    `Use known user facts when relevant to personalize responses naturally.`;
+
+  const messages = [
+    { role: "system", content: systemInstruction },
+    { role: "system", content: `Known user facts:\n${knownFactsToPrompt(knownFacts)}` },
+  ];
+  const h = Array.isArray(history) ? history.slice(-8) : [];
+  for (const item of h) {
+    if (!item || !item.role || !item.content) continue;
+    messages.push({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: String(item.content).slice(0, 1200),
+    });
+  }
+  messages.push({ role: "user", content: String(message || "") });
+
+  try {
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-Title": appTitle,
+    };
+    if (siteUrl) headers["HTTP-Referer"] = siteUrl;
+
+    const endpoint = `${baseUrl}/api/v1/chat/completions`;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.6,
+        max_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 140,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = (data && data.error && data.error.message) ? String(data.error.message) : `HTTP ${res.status}`;
+      const fb = await groqFallbackChatReply(message, history, language, subject, knownFacts);
+      return fb.ok
+        ? {
+            ok: true,
+            answer: fb.answer,
+            speak_text: fb.speak_text || buildSpeakText(fb.answer),
+            error: `OpenRouter failed (${detail}); used Groq fallback.`,
+            provider: "groq_fallback",
+          }
+        : {
+            ok: false,
+            answer: fallbackReply(message),
+            speak_text: buildSpeakText(fallbackReply(message)),
+            error: `OpenRouter failed (${detail}) and fallback failed: ${fb.error}`,
+            provider: "none",
+          };
+    }
+
+    const answer =
+      data &&
+      data.choices &&
+      data.choices[0] &&
+      data.choices[0].message &&
+      data.choices[0].message.content
+        ? String(data.choices[0].message.content).trim()
+        : "";
+    if (!answer) {
+      return {
+        ok: false,
+        error: "OpenRouter returned an empty answer.",
+        answer: fallbackReply(message),
+        speak_text: buildSpeakText(fallbackReply(message)),
+        provider: "none",
+      };
+    }
+
+    return { ok: true, answer, speak_text: buildSpeakText(answer), error: "", provider: "openrouter" };
+  } catch (e) {
+    const fb = await groqFallbackChatReply(message, history, language, subject, knownFacts);
+    return fb.ok
+      ? {
+          ok: true,
+          answer: fb.answer,
+          speak_text: fb.speak_text || buildSpeakText(fb.answer),
+          error: `OpenRouter request failed (${String(e.message || e)}); used Groq fallback.`,
+          provider: "groq_fallback",
+        }
+      : {
+          ok: false,
+          answer: fallbackReply(message),
+          speak_text: buildSpeakText(fallbackReply(message)),
+          error: `OpenRouter request failed (${String(e.message || e)}) and fallback failed: ${fb.error}`,
+          provider: "none",
+        };
   }
 }
 
@@ -293,16 +410,16 @@ exports.handler = async function handler(event) {
   const action = detectAction(message, history, combinedKnownFacts);
   const actionUpdates = action && action.home_address ? { home_address: String(action.home_address) } : {};
   const mergedKnownFacts = mergeKnownFacts(combinedKnownFacts, actionUpdates);
-  const groq = action ? null : await groqChatReply(message, history, language, subject, mergedKnownFacts);
-  const answer = action && action.message ? String(action.message) : groq.answer;
-  const speakText = action && action.message ? buildSpeakText(action.message) : String(groq.speak_text || buildSpeakText(answer));
+  const llm = action ? null : await openRouterChatReply(message, history, language, subject, mergedKnownFacts);
+  const answer = action && action.message ? String(action.message) : llm.answer;
+  const speakText = action && action.message ? buildSpeakText(action.message) : String(llm.speak_text || buildSpeakText(answer));
 
   return json(200, {
     answer,
     speak_text: speakText,
-    ai_provider: action ? "local_action" : "groq",
-    ai_ok: action ? true : !!groq.ok,
-    ai_error: action ? "" : String(groq.error || ""),
+    ai_provider: action ? "local_action" : String(llm.provider || "openrouter"),
+    ai_ok: action ? true : !!llm.ok,
+    ai_error: action ? "" : String(llm.error || ""),
     used_google_context: false,
     google_results: [],
     learned_facts: mergedKnownFacts,
