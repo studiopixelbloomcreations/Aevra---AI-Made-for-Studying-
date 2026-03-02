@@ -4643,3 +4643,59 @@ body {
 .pi-log-row.assistant {
   background: rgba(16, 185, 129, 0.2);
 }
+
+.pi-creator {
+  margin-top: 10px;
+  max-width: 980px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  border: 1px solid rgba(255, 176, 96, 0.28);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.pi-creator-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pi-creator-title {
+  color: #fed7aa;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.pi-creator-meta {
+  margin-top: 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.pi-creator-proposals {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pi-proposal-row {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pi-proposal-text {
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 1.3;
+}

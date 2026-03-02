@@ -332,7 +332,6 @@ exports.handler = async function handler(event) {
   const action = detectAction(message, history, combinedKnownFacts);
   const actionUpdates = {};
   if (action && action.home_address) actionUpdates.home_address = String(action.home_address);
-  if (action && action.type === "connect_spotify") actionUpdates.spotify_connected = true;
   const mergedKnownFacts = mergeKnownFacts(combinedKnownFacts, actionUpdates);
   const llm = action ? null : await geminiChatReply(message, history, language, subject, mergedKnownFacts);
   const answer = action && action.message ? String(action.message) : llm.answer;
