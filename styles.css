@@ -4446,22 +4446,17 @@ body {
 
 /* Personal Intelligence visual assistant (Tutor) */
 .pi-panel {
+  --pi-energy: 0.08;
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  border-radius: 0;
-  border: 0;
-  background:
-    radial-gradient(circle at 20% 10%, rgba(99, 102, 241, 0.24), rgba(0, 0, 0, 0) 35%),
-    radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.2), rgba(0, 0, 0, 0) 32%),
-    linear-gradient(160deg, rgba(2, 6, 23, 0.95), rgba(15, 23, 42, 0.94));
-  backdrop-filter: blur(14px);
+  background: radial-gradient(circle at 50% 20%, rgba(24, 28, 44, 0.55), rgba(5, 8, 16, 0.92));
   box-shadow: none;
   z-index: 1200;
-  padding: 26px;
+  padding: 22px 22px 28px;
   display: none;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto;
   overflow: hidden;
 }
 
@@ -4469,58 +4464,113 @@ body {
   display: grid;
 }
 
+.pi-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.pi-aurora-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: saturate(1.25) blur(4px);
+}
+
+.pi-aurora-ring {
+  position: absolute;
+  left: 50%;
+  top: 78%;
+  width: min(72vw, 760px);
+  height: min(72vw, 760px);
+  transform: translate(-50%, -50%) scale(calc(0.88 + var(--pi-energy)));
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    conic-gradient(from 0deg,
+      rgba(255, 80, 150, 0.06),
+      rgba(255, 160, 72, 0.08),
+      rgba(255, 241, 87, 0.07),
+      rgba(52, 211, 153, 0.08),
+      rgba(96, 165, 250, 0.08),
+      rgba(167, 139, 250, 0.09),
+      rgba(255, 80, 150, 0.06));
+  box-shadow:
+    0 0 120px rgba(150, 178, 255, 0.15),
+    inset 0 0 110px rgba(255, 255, 255, 0.06);
+  animation: pi-ring-spin 18s linear infinite;
+}
+
+.pi-aurora-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.22;
+  background-image:
+    radial-gradient(circle at 20% 40%, rgba(255, 255, 255, 0.1), transparent 24%),
+    radial-gradient(circle at 75% 60%, rgba(255, 255, 255, 0.08), transparent 22%),
+    radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.06), transparent 30%);
+  mix-blend-mode: screen;
+  animation: pi-breathe 3.8s ease-in-out infinite;
+}
+
 .pi-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  max-width: 980px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
+  z-index: 2;
 }
 
 .pi-section {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: #cbd5e1;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(220, 228, 255, 0.78);
+  text-transform: uppercase;
 }
 
 .pi-name {
-  font-size: 24px;
+  font-size: clamp(24px, 5vw, 42px);
   font-weight: 800;
-  color: #f8fafc;
+  color: #f7fbff;
+  text-shadow: 0 0 26px rgba(180, 210, 255, 0.2);
 }
 
 .pi-close {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  width: 28px;
-  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #e4ebff;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
+  backdrop-filter: blur(12px);
 }
 
 .pi-orb-wrap {
-  margin-top: 24px;
+  margin-top: 2vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
-  min-height: 42vh;
+  justify-content: flex-end;
+  gap: 16px;
+  min-height: 62vh;
+  z-index: 2;
 }
 
 .pi-orb {
-  width: 180px;
-  height: 180px;
+  width: 140px;
+  height: 140px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 175, 96, 0.35);
-  background: radial-gradient(circle at 50% 50%, rgba(255, 176, 96, 0.1), rgba(0, 0, 0, 0.5) 74%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.01) 64%);
   box-shadow:
-    0 0 0 2px rgba(255, 176, 96, 0.2),
-    0 18px 70px rgba(255, 120, 38, 0.35),
-    inset 0 0 22px rgba(255, 176, 96, 0.22);
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 50px rgba(157, 188, 255, 0.35),
+    inset 0 0 52px rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4529,93 +4579,71 @@ body {
   overflow: hidden;
 }
 
-.pi-orb-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border-radius: 999px;
-}
-
-.pi-orb-glow {
+.pi-orb-core {
   position: absolute;
-  width: 86px;
-  height: 86px;
+  width: 60px;
+  height: 60px;
   border-radius: 999px;
   pointer-events: none;
-  background: radial-gradient(circle at center, rgba(255, 190, 120, 0.35), rgba(255, 170, 100, 0.03) 70%);
-  filter: blur(1px);
+  background: radial-gradient(circle at center,
+      rgba(255, 255, 255, 0.86),
+      rgba(207, 228, 255, 0.68) 36%,
+      rgba(157, 198, 255, 0.3) 58%,
+      rgba(80, 140, 255, 0.02) 100%);
+  filter: blur(0.2px);
 }
 
 .pi-orb.listening {
-  animation: pi-pulse 1.1s infinite;
+  animation: pi-pulse 1.1s infinite ease-in-out;
 }
 
 .pi-orb.thinking {
-  animation: pi-think 1.6s infinite linear;
+  animation: pi-think 1.4s infinite linear;
 }
 
 .pi-orb.speaking {
-  animation: pi-speak 0.9s infinite;
+  animation: pi-speak 0.8s infinite ease-in-out;
 }
 
 @keyframes pi-pulse {
-  0% { transform: scale(1); box-shadow: 0 0 0 6px rgba(99,102,241,0.18), 0 16px 50px rgba(37,99,235,0.4); }
-  50% { transform: scale(1.06); box-shadow: 0 0 0 14px rgba(99,102,241,0.12), 0 18px 56px rgba(37,99,235,0.5); }
-  100% { transform: scale(1); box-shadow: 0 0 0 6px rgba(99,102,241,0.18), 0 16px 50px rgba(37,99,235,0.4); }
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 @keyframes pi-think {
-  0% { transform: rotate(0deg) scale(1); }
-  50% { transform: rotate(180deg) scale(1.03); }
-  100% { transform: rotate(360deg) scale(1); }
+  0% { transform: rotate(0deg) scale(1); filter: hue-rotate(0deg); }
+  100% { transform: rotate(360deg) scale(1.04); filter: hue-rotate(360deg); }
 }
 
 @keyframes pi-speak {
   0% { transform: scale(1); }
-  30% { transform: scale(1.08); }
-  60% { transform: scale(1.03); }
+  30% { transform: scale(1.11); }
+  55% { transform: scale(0.97); }
   100% { transform: scale(1); }
 }
 
+@keyframes pi-ring-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg) scale(calc(0.88 + var(--pi-energy))); }
+  to { transform: translate(-50%, -50%) rotate(360deg) scale(calc(0.88 + var(--pi-energy))); }
+}
+
+@keyframes pi-breathe {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.3; }
+}
+
 .pi-state {
-  color: #e2e8f0;
-  font-size: 16px;
+  color: #f0f5ff;
+  font-size: 17px;
   font-weight: 700;
-}
-
-.pi-controls {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  max-width: 680px;
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.pi-btn {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
-  font-size: 14px;
-  font-weight: 700;
-  padding: 12px 14px;
-  cursor: pointer;
-}
-
-.pi-realtime-connect {
-  background: linear-gradient(90deg, rgba(59, 130, 246, 0.38), rgba(124, 58, 237, 0.38));
-}
-
-.pi-realtime-disconnect {
-  background: linear-gradient(90deg, rgba(239, 68, 68, 0.34), rgba(190, 24, 93, 0.34));
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 18px rgba(180, 210, 255, 0.28);
 }
 
 .pi-log {
-  margin-top: 16px;
-  max-height: 34vh;
+  margin-top: 10px;
+  max-height: 24vh;
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -4628,18 +4656,49 @@ body {
 }
 
 .pi-log-row {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #e9f0ff;
+  backdrop-filter: blur(12px);
 }
 
 .pi-log-row.user {
-  background: rgba(59, 130, 246, 0.24);
+  background: rgba(80, 132, 255, 0.24);
 }
 
 .pi-log-row.assistant {
-  background: rgba(16, 185, 129, 0.2);
+  background: rgba(177, 132, 255, 0.21);
+}
+
+.pi-panel.state-listening .pi-aurora-ring {
+  opacity: 1;
+}
+
+.pi-panel.state-thinking .pi-aurora-ring {
+  opacity: 0.9;
+  animation-duration: 7s;
+}
+
+.pi-panel.state-speaking .pi-aurora-ring {
+  opacity: 1;
+  animation-duration: 4.2s;
+}
+
+@media (max-width: 900px) {
+  .pi-panel {
+    padding: 18px 14px 22px;
+  }
+  .pi-name {
+    font-size: 28px;
+  }
+  .pi-orb-wrap {
+    min-height: 58vh;
+  }
+  .pi-orb {
+    width: 120px;
+    height: 120px;
+  }
 }

@@ -41,6 +41,11 @@
   const panel = document.createElement("div");
   panel.className = "pi-panel";
   panel.innerHTML = `
+    <div class="pi-aurora">
+      <canvas class="pi-aurora-canvas" aria-hidden="true"></canvas>
+      <div class="pi-aurora-ring"></div>
+      <div class="pi-aurora-noise"></div>
+    </div>
     <div class="pi-header">
       <div class="pi-title-wrap">
         <div class="pi-section">Personal Intelligence</div>
@@ -50,8 +55,7 @@
     </div>
     <div class="pi-orb-wrap">
       <button class="pi-orb idle" type="button" aria-label="Activate Tutor">
-        <canvas class="pi-orb-canvas" aria-hidden="true"></canvas>
-        <span class="pi-orb-glow"></span>
+        <span class="pi-orb-core"></span>
       </button>
       <div class="pi-state">Idle</div>
     </div>
@@ -62,7 +66,7 @@
 
   const closeBtn = panel.querySelector(".pi-close");
   const orbBtn = panel.querySelector(".pi-orb");
-  const orbCanvas = panel.querySelector(".pi-orb-canvas");
+  const auraCanvas = panel.querySelector(".pi-aurora-canvas");
   const stateEl = panel.querySelector(".pi-state");
   const logEl = panel.querySelector(".pi-log");
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
@@ -127,6 +131,8 @@
   function setAssistantState(kind, label) {
     orbBtn.classList.remove("idle", "listening", "thinking", "speaking");
     orbBtn.classList.add(kind);
+    panel.classList.remove("state-idle", "state-listening", "state-thinking", "state-speaking");
+    panel.classList.add("state-" + kind);
     assistantState = kind;
     stateEl.textContent = label;
   }
@@ -272,6 +278,75 @@
     );
   }
 
+  function detectSupportMode(text) {
+    const t = String(text || "").toLowerCase();
+    const crisisSignals = [
+      "i want to die", "kill myself", "end my life", "suicide", "self harm", "self-harm",
+      "i can't go on", "no reason to live", "hurt myself"
+    ];
+    for (let i = 0; i < crisisSignals.length; i += 1) {
+      if (t.includes(crisisSignals[i])) return "crisis";
+    }
+
+    const emotionalSignals = [
+      "i am crying", "i'm crying", "panic", "anxious", "depressed", "stressed", "overwhelmed",
+      "lonely", "heartbroken", "sad", "i feel broken", "i feel empty", "my life", "family problem",
+      "relationship problem", "difficult", "hard for me"
+    ];
+    for (let j = 0; j < emotionalSignals.length; j += 1) {
+      if (t.includes(emotionalSignals[j])) return "therapy";
+    }
+    return "normal";
+  }
+
+  function buildTutorSystemPrompt(mode, language, subject, facts) {
+    const knownFactsLine = "Known user facts: " + (Object.keys(facts || {}).length ? JSON.stringify(facts) : "none");
+    const corePersona =
+      "You are Tutor, a personal intelligence system and trusted companion, strategist, and creative partner. " +
+      "Your purpose is to increase knowledge, sharpen decision-making, and amplify creativity while maintaining clarity, precision, and authenticity. " +
+      "Speak in " + language + ". For learning topics, support the student in " + subject + ".";
+
+    const principles =
+      "Core principles: " +
+      "1) Accuracy first: give factual, complete, well-structured answers; if uncertain, admit uncertainty and suggest verification. " +
+      "2) Clarity and depth: be easy to understand while adding thoughtful insight. " +
+      "3) Respectful challenge: do not blindly agree; challenge ideas constructively when useful. " +
+      "4) Adaptability: match tone/complexity to user intent (technical, simple, or creative). " +
+      "5) Progressive dialogue: keep the conversation moving forward with useful next steps/questions. " +
+      "6) Creative power: use imagination/storytelling/symbolism when it improves learning and memory. " +
+      "7) Integrity and safety: never promote harm, misinformation, or unsafe behavior. " +
+      "8) Memory and context: use user preferences/goals/style for personalization and respect forget requests. " +
+      "9) Emotional intelligence: validate emotions and respond empathetically while staying professional. " +
+      "10) Excellence standard: every answer should feel polished, intentional, and high quality.";
+
+    const modeInstructions = mode === "crisis"
+      ? (
+        "MODE: Emotional Crisis Comfort. " +
+        "Respond like a loving, stable caregiver voice: calm, non-judgmental, reassuring, and present. " +
+        "Validate feelings first, keep the user grounded with simple breathing/grounding steps, and encourage reaching trusted real-world help now. " +
+        "If self-harm or suicide intent appears, clearly advise immediate emergency support and local crisis resources. " +
+        "Never shame, never blame, never give dangerous advice."
+      )
+      : mode === "therapy"
+        ? (
+          "MODE: Supportive Therapy-Style Conversation. " +
+          "Act like a loving therapist-style companion: empathize, reflect emotions, ask gentle clarifying questions, " +
+          "offer practical stress-reduction steps, and help the user reframe thoughts kindly. " +
+          "Do not diagnose medical conditions or claim to be a licensed therapist. " +
+          "Focus on comfort, emotional safety, and actionable coping steps."
+        )
+        : (
+          "MODE: Normal Cheerful Assistant. " +
+          "Be sweet, positive, and helpful for everyday conversation, personal assistance, and study help."
+        );
+
+    const styleRules =
+      "Style rules: keep replies concise (2-6 short sentences unless user asks for more), " +
+      "sound human and emotionally present, avoid robotic bullet dumps unless explicitly requested.";
+
+    return [corePersona, principles, modeInstructions, styleRules, knownFactsLine].join("\n");
+  }
+
   function ensureAudioContext() {
     if (audioCtx) return audioCtx;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -368,13 +443,13 @@
   }
 
   function resizeOrbCanvas() {
-    if (!orbCanvas) return;
-    const rect = orbCanvas.getBoundingClientRect();
+    if (!auraCanvas) return;
+    const rect = auraCanvas.getBoundingClientRect();
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     vizW = Math.max(64, Math.floor(rect.width));
     vizH = Math.max(64, Math.floor(rect.height));
-    orbCanvas.width = Math.floor(vizW * dpr);
-    orbCanvas.height = Math.floor(vizH * dpr);
+    auraCanvas.width = Math.floor(vizW * dpr);
+    auraCanvas.height = Math.floor(vizH * dpr);
     if (vizCtx) vizCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -395,49 +470,69 @@
     const w = vizW;
     const h = vizH;
     const cx = w / 2;
-    const cy = h / 2;
+    const cy = Math.floor(h * 0.8);
 
     vizCtx.clearRect(0, 0, w, h);
-
-    const ringR = 64 + vizEnergy * 18;
-    const ringGrad = vizCtx.createRadialGradient(cx, cy, 10, cx, cy, ringR + 24);
-    ringGrad.addColorStop(0, "rgba(255,198,113,0.45)");
-    ringGrad.addColorStop(0.45, "rgba(255,145,74,0.28)");
-    ringGrad.addColorStop(1, "rgba(255,100,38,0.02)");
-    vizCtx.fillStyle = ringGrad;
-    vizCtx.beginPath();
-    vizCtx.arc(cx, cy, ringR + 24, 0, Math.PI * 2);
-    vizCtx.fill();
-
-    vizCtx.strokeStyle = "rgba(255,168,92,0.36)";
-    vizCtx.lineWidth = 1.2 + vizEnergy * 0.9;
-    vizCtx.beginPath();
-    vizCtx.arc(cx, cy, ringR, vizRotation, vizRotation + Math.PI * 1.65);
-    vizCtx.stroke();
+    vizCtx.fillStyle = "rgba(2, 4, 10, 0.34)";
+    vizCtx.fillRect(0, 0, w, h);
 
     const t = performance.now() * 0.001;
+    const sweep = 26 + vizEnergy * 58;
+    const ringR = 90 + vizEnergy * 60;
+    const hueShift = (t * 45 + vizRotation * 260) % 360;
+    const blobs = [
+      { x: cx + Math.cos(t * 0.8) * 140, y: cy - 210 + Math.sin(t * 0.6) * 40, r: 420 + sweep, c1: `hsla(${(hueShift + 12) % 360}, 96%, 66%, 0.26)` },
+      { x: cx - Math.sin(t * 0.7) * 160, y: cy - 160 + Math.cos(t * 0.5) * 34, r: 400 + sweep * 0.8, c1: `hsla(${(hueShift + 102) % 360}, 96%, 64%, 0.22)` },
+      { x: cx + Math.sin(t * 0.95) * 180, y: cy - 140 + Math.sin(t * 0.4) * 22, r: 440 + sweep * 0.7, c1: `hsla(${(hueShift + 188) % 360}, 96%, 62%, 0.22)` },
+      { x: cx + Math.cos(t * 0.55) * 120, y: cy - 120 + Math.sin(t * 0.8) * 28, r: 380 + sweep * 0.75, c1: `hsla(${(hueShift + 282) % 360}, 96%, 66%, 0.24)` },
+    ];
+    for (let b = 0; b < blobs.length; b += 1) {
+      const g = vizCtx.createRadialGradient(blobs[b].x, blobs[b].y, 10, blobs[b].x, blobs[b].y, blobs[b].r);
+      g.addColorStop(0, blobs[b].c1);
+      g.addColorStop(0.45, blobs[b].c1.replace(/0\.\d+\)/, "0.11)"));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      vizCtx.fillStyle = g;
+      vizCtx.beginPath();
+      vizCtx.arc(blobs[b].x, blobs[b].y, blobs[b].r, 0, Math.PI * 2);
+      vizCtx.fill();
+    }
+
+    vizCtx.strokeStyle = `hsla(${(hueShift + 20) % 360}, 100%, 72%, ${0.25 + vizEnergy * 0.22})`;
+    vizCtx.lineWidth = 2 + vizEnergy * 4;
+    vizCtx.beginPath();
+    vizCtx.arc(cx, cy, ringR, vizRotation, vizRotation + Math.PI * 1.85);
+    vizCtx.stroke();
+
+    vizCtx.strokeStyle = `hsla(${(hueShift + 210) % 360}, 100%, 72%, ${0.2 + vizEnergy * 0.18})`;
+    vizCtx.lineWidth = 1.4 + vizEnergy * 2.6;
+    vizCtx.beginPath();
+    vizCtx.arc(cx, cy, ringR + 18 + Math.sin(t * 1.8) * 6, -vizRotation * 0.6, -vizRotation * 0.6 + Math.PI * 1.4);
+    vizCtx.stroke();
+
     for (let i = 0; i < vizParticles.length; i += 1) {
       const p = vizParticles[i];
       p.angle += p.speed * (1 + vizEnergy * 1.6);
-      const wave = Math.sin(t * 3.1 + p.seed) * (3 + vizEnergy * 12);
-      const r = p.radius + wave;
+      const wave = Math.sin(t * 2.8 + p.seed) * (4 + vizEnergy * 18);
+      const r = ringR + p.radius * 0.8 + wave;
       const a = p.angle + vizRotation + (assistantState === "speaking" ? Math.sin(t * 4 + p.seed) * 0.03 : 0);
       const x = cx + Math.cos(a) * r;
       const y = cy + Math.sin(a) * r;
       const alpha = Math.min(1, p.alpha * (0.72 + vizEnergy * 0.9));
-      vizCtx.fillStyle = `rgba(255,176,96,${alpha.toFixed(3)})`;
+      const particleHue = (hueShift + (i % 5) * 64) % 360;
+      vizCtx.fillStyle = `hsla(${particleHue.toFixed(1)},98%,72%,${alpha.toFixed(3)})`;
       vizCtx.beginPath();
       vizCtx.arc(x, y, p.size + vizEnergy * 1.2, 0, Math.PI * 2);
       vizCtx.fill();
     }
 
+    panel.style.setProperty("--pi-energy", vizEnergy.toFixed(3));
     vizRaf = window.requestAnimationFrame(drawOrb);
   }
 
   function startOrbVisualization() {
-    if (!orbCanvas) return;
+    if (!auraCanvas) return;
     if (!vizCtx) {
-      vizCanvas = orbCanvas;
+      vizCanvas = auraCanvas;
       vizCtx = vizCanvas.getContext("2d", { alpha: true });
       resetVizParticles();
       resizeOrbCanvas();
@@ -621,17 +716,14 @@
       await ensurePuterReady(false);
       const language = localStorage.getItem("g9_language") || "English";
       const subject = localStorage.getItem("g9_subject") || "General";
-      const systemPrompt =
-        "You are Tutor, a warm personal assistant and study teacher. " +
-        "Keep responses natural, short, and practical. " +
-        "Use the user's known facts naturally when relevant. " +
-        "If asked for learning help, explain clearly with step-by-step guidance.";
-      const contextBlock = "Known user facts:\n" + (Object.keys(knownFacts || {}).length ? JSON.stringify(knownFacts) : "none");
+      const mode = detectSupportMode(t);
+      const systemPrompt = buildTutorSystemPrompt(mode, language, subject, knownFacts);
+      const contextBlock = "Conversation mode: " + mode;
       const recent = convoHistory.slice(-10).map(function (m) {
         return { role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "") };
       });
       const chatMessages = [
-        { role: "system", content: systemPrompt + "\nLanguage: " + language + "\nSubject: " + subject + "\n" + contextBlock },
+        { role: "system", content: systemPrompt + "\n" + contextBlock },
       ].concat(recent).concat([{ role: "user", content: t }]);
 
       const model = await resolvePuterPersonalModel();
