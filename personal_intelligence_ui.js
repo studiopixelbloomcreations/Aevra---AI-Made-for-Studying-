@@ -219,6 +219,16 @@
     return { provider: "openai", voice: "alloy", model: "gpt-4o-mini-tts" };
   }
 
+  function getSelectedElevenLabsVoiceId() {
+    const raw = getSelectedVoiceId();
+    if (raw && raw.indexOf("elevenlabs:") === 0) {
+      const id = raw.slice("elevenlabs:".length).trim();
+      if (id) return id;
+    }
+    // Rachel (safe default)
+    return "21m00Tcm4TlvDq8ikWAM";
+  }
+
   function getSelectedVoiceId() {
     try { return String(localStorage.getItem(TTS_VOICE_STORAGE_KEY) || ""); } catch (e) { return ""; }
   }
@@ -589,16 +599,40 @@
   async function playTutorTTS(text) {
     stopTutorAudio();
     try {
-      await ensurePuterReady(false);
-      const audio = await window.puter.ai.txt2speech(String(text || ""), getSelectedPuterVoiceOptions());
-      if (!audio || !audio.play) throw new Error("PUTER_TTS_EMPTY");
-      tutorAudio = audio;
-      setAssistantState("speaking", "Speaking");
+      const payload = {
+        text: String(text || ""),
+        voiceId: getSelectedElevenLabsVoiceId(),
+        stability: 0.5,
+        similarity_boost: 0.75,
+      };
+      const res = await (window.Api && window.Api.apiFetch
+        ? window.Api.apiFetch("/tts/elevenlabs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : fetch("/tts/elevenlabs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }));
+      if (!res.ok) throw new Error("ELEVENLABS_HTTP_" + res.status);
+      const blob = await res.blob();
+      if (!blob || !blob.size) throw new Error("ELEVENLABS_EMPTY_AUDIO");
+      const url = URL.createObjectURL(blob);
+      tutorAudio = new Audio(url);
+      tutorAudio.preload = "auto";
+      stopSpeakerAnalyser();
+      connectSpeakerAnalyserForAudioElement(tutorAudio);
+      tutorAudio.onplay = function () { setAssistantState("speaking", "Speaking"); };
+      tutorAudio.onended = function () {
+        setAssistantState("listening", "Listening");
+        armIdleTimer();
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      };
       await tutorAudio.play();
-      setAssistantState("listening", "Listening");
-      armIdleTimer();
     } catch (e) {
-      dbg("Puter TTS failed, fallback to browser TTS", e && e.message);
+      dbg("ElevenLabs TTS failed, fallback to browser TTS", e && e.message);
       addLog("assistant", "Tutor: Voice engine fallback (" + String((e && e.message) || "TTS error") + ").");
       try {
         const u = new SpeechSynthesisUtterance(String(text || ""));

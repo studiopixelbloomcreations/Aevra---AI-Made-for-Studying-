@@ -238,7 +238,7 @@ async function geminiChatReply(message, history, language, subject, knownFacts, 
   }
 
   const reqModel = sanitizeModelId(opts && opts.model);
-  const model = reqModel || String(process.env.GEMINI_PERSONAL_MODEL || "gemini-2.5-flash").trim();
+  const envModel = sanitizeModelId(process.env.GEMINI_PERSONAL_MODEL || "gemini-2.5-flash");
   const maxOutputTokens = Number(process.env.GEMINI_PERSONAL_MAX_TOKENS || 140);
   const baseUrl = String(process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").trim();
   const defaultSystemInstruction =
@@ -259,63 +259,76 @@ async function geminiChatReply(message, history, language, subject, knownFacts, 
   }
   contents.push({ role: "user", parts: [{ text: String(message || "") }] });
 
-  try {
-    const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `Known user facts:\n${knownFactsToPrompt(knownFacts)}` }],
-          },
-          ...contents,
-        ],
-        generationConfig: {
-          temperature: 0.6,
-          maxOutputTokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 140,
-        },
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail =
-        (data && data.error && data.error.message) ? String(data.error.message) : `HTTP ${res.status}`;
-      return {
-        ok: false,
-        error: `Gemini request failed: ${detail}`,
-        answer: fallbackReply(message),
-      };
-    }
+  const payloadBody = {
+    system_instruction: { parts: [{ text: systemInstruction }] },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `Known user facts:\n${knownFactsToPrompt(knownFacts)}` }],
+      },
+      ...contents,
+    ],
+    generationConfig: {
+      temperature: 0.6,
+      maxOutputTokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 140,
+    },
+  };
 
-    const parts =
-      data &&
-      data.candidates &&
-      data.candidates[0] &&
-      data.candidates[0].content &&
-      Array.isArray(data.candidates[0].content.parts)
-        ? data.candidates[0].content.parts
-        : [];
-    const answer = parts.map((p) => (p && p.text ? String(p.text) : "")).join("").trim();
-    if (!answer) {
-      return {
-        ok: false,
-        error: "Gemini returned an empty answer.",
-        answer: fallbackReply(message),
-      };
+  const modelCandidates = [];
+  const pushModel = (m) => {
+    const s = sanitizeModelId(m);
+    if (!s) return;
+    if (!modelCandidates.includes(s)) modelCandidates.push(s);
+  };
+  pushModel(reqModel);
+  pushModel(envModel);
+  pushModel("gemini-2.5-flash");
+  pushModel("gemini-2.0-flash");
+  pushModel("gemini-1.5-pro");
+
+  const errors = [];
+  for (const model of modelCandidates) {
+    try {
+      const endpoint = `${baseUrl}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payloadBody),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail =
+          (data && data.error && data.error.message) ? String(data.error.message) : `HTTP ${res.status}`;
+        errors.push(`${model}: ${detail}`);
+        continue;
+      }
+
+      const parts =
+        data &&
+        data.candidates &&
+        data.candidates[0] &&
+        data.candidates[0].content &&
+        Array.isArray(data.candidates[0].content.parts)
+          ? data.candidates[0].content.parts
+          : [];
+      const answer = parts.map((p) => (p && p.text ? String(p.text) : "")).join("").trim();
+      if (!answer) {
+        errors.push(`${model}: empty answer`);
+        continue;
+      }
+      return { ok: true, answer, speak_text: buildSpeakText(answer), error: "", provider: `gemini:${model}` };
+    } catch (e) {
+      errors.push(`${model}: ${String(e && e.message ? e.message : e)}`);
     }
-    return { ok: true, answer, speak_text: buildSpeakText(answer), error: "", provider: "gemini" };
-  } catch (e) {
-    return {
-      ok: false,
-      error: `Gemini request failed: ${String(e.message || e)}`,
-      answer: fallbackReply(message),
-      speak_text: buildSpeakText(fallbackReply(message)),
-      provider: "none",
-    };
   }
+
+  return {
+    ok: false,
+    error: `Gemini request failed for all models: ${errors.join(" | ").slice(0, 1400)}`,
+    answer: fallbackReply(message),
+    speak_text: buildSpeakText(fallbackReply(message)),
+    provider: "none",
+  };
 }
 
 exports.handler = async function handler(event) {
