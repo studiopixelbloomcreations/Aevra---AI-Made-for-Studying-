@@ -630,14 +630,13 @@
     const t = performance.now() * 0.001;
     const sweep = 38 + vizEnergy * 110;
     const ringR = 94 + vizEnergy * 88;
-    const hueShift = (t * 24 + vizRotation * 140) % 360;
     const coreR = 18 + vizEnergy * 20 + pulse * 8;
     const outerR = 72 + vizEnergy * 58 + pulse * 10;
 
     const coreGlow = vizCtx.createRadialGradient(cx, cy, 0, cx, cy, outerR * 2.3);
-    coreGlow.addColorStop(0, `hsla(${(190 + hueShift * 0.15) % 360}, 100%, 84%, ${0.58 + vizEnergy * 0.4})`);
-    coreGlow.addColorStop(0.2, `hsla(${(202 + hueShift * 0.12) % 360}, 100%, 72%, ${0.34 + vizEnergy * 0.35})`);
-    coreGlow.addColorStop(0.5, `hsla(${(34 + hueShift * 0.08) % 360}, 100%, 66%, ${0.16 + vizEnergy * 0.25})`);
+    coreGlow.addColorStop(0, `hsla(198, 100%, 86%, ${0.58 + vizEnergy * 0.4})`);
+    coreGlow.addColorStop(0.2, `hsla(206, 100%, 74%, ${0.34 + vizEnergy * 0.35})`);
+    coreGlow.addColorStop(0.5, `hsla(214, 100%, 68%, ${0.16 + vizEnergy * 0.25})`);
     coreGlow.addColorStop(1, "rgba(0,0,0,0)");
     vizCtx.fillStyle = coreGlow;
     vizCtx.beginPath();
@@ -646,10 +645,10 @@
 
     vizCtx.globalCompositeOperation = "lighter";
     const blobs = [
-      { x: cx + Math.cos(t * 0.8) * 140, y: cy - 210 + Math.sin(t * 0.6) * 40, r: 420 + sweep, c1: `hsla(${(198 + hueShift * 0.18) % 360}, 98%, 66%, 0.32)` },
-      { x: cx - Math.sin(t * 0.7) * 160, y: cy - 160 + Math.cos(t * 0.5) * 34, r: 400 + sweep * 0.8, c1: `hsla(${(206 + hueShift * 0.1) % 360}, 98%, 64%, 0.28)` },
-      { x: cx + Math.sin(t * 0.95) * 180, y: cy - 140 + Math.sin(t * 0.4) * 22, r: 440 + sweep * 0.7, c1: `hsla(${(35 + hueShift * 0.08) % 360}, 98%, 62%, 0.26)` },
-      { x: cx + Math.cos(t * 0.55) * 120, y: cy - 120 + Math.sin(t * 0.8) * 28, r: 380 + sweep * 0.75, c1: `hsla(${(192 + hueShift * 0.14) % 360}, 98%, 66%, 0.3)` },
+      { x: cx + Math.cos(t * 0.8) * 140, y: cy - 210 + Math.sin(t * 0.6) * 40, r: 420 + sweep, c1: "hsla(198, 98%, 66%, 0.32)" },
+      { x: cx - Math.sin(t * 0.7) * 160, y: cy - 160 + Math.cos(t * 0.5) * 34, r: 400 + sweep * 0.8, c1: "hsla(204, 98%, 64%, 0.28)" },
+      { x: cx + Math.sin(t * 0.95) * 180, y: cy - 140 + Math.sin(t * 0.4) * 22, r: 440 + sweep * 0.7, c1: "hsla(212, 98%, 62%, 0.26)" },
+      { x: cx + Math.cos(t * 0.55) * 120, y: cy - 120 + Math.sin(t * 0.8) * 28, r: 380 + sweep * 0.75, c1: "hsla(194, 98%, 66%, 0.30)" },
     ];
     for (let b = 0; b < blobs.length; b += 1) {
       const g = vizCtx.createRadialGradient(blobs[b].x, blobs[b].y, 10, blobs[b].x, blobs[b].y, blobs[b].r);
@@ -665,14 +664,14 @@
     for (let ring = 0; ring < 3; ring += 1) {
       const rr = ringR + ring * (16 + vizEnergy * 10);
       const seg = Math.PI * (1.2 + ring * 0.25 + vizEnergy * 0.5);
-      vizCtx.strokeStyle = `hsla(${(194 + ring * 8 + hueShift * 0.16) % 360}, 100%, 72%, ${0.16 + vizEnergy * 0.32})`;
+      vizCtx.strokeStyle = `hsla(${194 + ring * 6}, 100%, 72%, ${0.16 + vizEnergy * 0.32})`;
       vizCtx.lineWidth = 1.6 + vizEnergy * (3.8 - ring * 0.7);
       vizCtx.beginPath();
       vizCtx.arc(cx, cy, rr, vizRotation * (1 + ring * 0.22), vizRotation * (1 + ring * 0.22) + seg);
       vizCtx.stroke();
     }
 
-    vizCtx.strokeStyle = `hsla(${(34 + hueShift * 0.12) % 360}, 100%, 72%, ${0.2 + vizEnergy * 0.18})`;
+    vizCtx.strokeStyle = `hsla(210, 100%, 72%, ${0.2 + vizEnergy * 0.18})`;
     vizCtx.lineWidth = 1.4 + vizEnergy * 2.6;
     vizCtx.beginPath();
     vizCtx.arc(cx, cy, ringR + 18 + Math.sin(t * 1.8) * 6, -vizRotation * 0.6, -vizRotation * 0.6 + Math.PI * 1.4);
@@ -687,7 +686,7 @@
       const x = cx + Math.cos(a) * r + Math.sin(t * 2 + p.seed) * p.drift * 8;
       const y = cy + Math.sin(a) * r + Math.cos(t * 2.2 + p.seed) * p.drift * 8;
       if (p.prevX || p.prevY) {
-        vizCtx.strokeStyle = `hsla(${(190 + (i % 6) * 4 + hueShift * 0.14) % 360},100%,72%,${(0.04 + vizEnergy * 0.16).toFixed(3)})`;
+        vizCtx.strokeStyle = `hsla(${192 + (i % 6) * 3},100%,72%,${(0.04 + vizEnergy * 0.16).toFixed(3)})`;
         vizCtx.lineWidth = 0.4 + p.size * 0.35;
         vizCtx.beginPath();
         vizCtx.moveTo(p.prevX, p.prevY);
@@ -697,7 +696,7 @@
       p.prevX = x;
       p.prevY = y;
       const alpha = Math.min(1, p.alpha * (0.72 + vizEnergy * 0.9));
-      const particleHue = i % 8 === 0 ? (34 + hueShift * 0.1) : (194 + (i % 7) * 3 + hueShift * 0.12);
+      const particleHue = 194 + (i % 7) * 3;
       vizCtx.fillStyle = `hsla(${particleHue.toFixed(1)},98%,72%,${alpha.toFixed(3)})`;
       vizCtx.beginPath();
       vizCtx.arc(x, y, p.size + vizEnergy * 1.2, 0, Math.PI * 2);
@@ -715,7 +714,7 @@
       const sy = cy + Math.sin(a - f.spread) * sr;
       const ex = cx + Math.cos(a + f.spread) * er;
       const ey = cy + Math.sin(a + f.spread) * er;
-      vizCtx.strokeStyle = `hsla(${(197 + hueShift * 0.12 + (k % 5) * 6) % 360},100%,72%,${(f.alpha + vizEnergy * 0.2).toFixed(3)})`;
+      vizCtx.strokeStyle = `hsla(${196 + (k % 5) * 5},100%,72%,${(f.alpha + vizEnergy * 0.2).toFixed(3)})`;
       vizCtx.lineWidth = 0.4 + vizEnergy * 1.2;
       vizCtx.beginPath();
       vizCtx.moveTo(sx, sy);
@@ -725,8 +724,8 @@
 
     const hotCore = vizCtx.createRadialGradient(cx, cy, coreR * 0.2, cx, cy, coreR * 2.4);
     hotCore.addColorStop(0, `rgba(255,255,255,${0.95})`);
-    hotCore.addColorStop(0.16, `hsla(${(194 + hueShift * 0.12) % 360}, 100%, 82%, ${0.9})`);
-    hotCore.addColorStop(0.48, `hsla(${(35 + hueShift * 0.07) % 360}, 100%, 70%, ${0.5 + vizEnergy * 0.25})`);
+    hotCore.addColorStop(0.16, `hsla(196, 100%, 82%, ${0.9})`);
+    hotCore.addColorStop(0.48, `hsla(208, 100%, 70%, ${0.5 + vizEnergy * 0.25})`);
     hotCore.addColorStop(1, "rgba(0,0,0,0)");
     vizCtx.fillStyle = hotCore;
     vizCtx.beginPath();
