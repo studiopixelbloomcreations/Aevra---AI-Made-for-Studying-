@@ -18,6 +18,10 @@
   ];
   const MEMORY_KEY = "personal_intelligence_memory_v1";
   const HISTORY_KEY = "personal_intelligence_history_v1";
+  const HISTORY_MAX_ITEMS = 3000;
+  const HISTORY_RETENTION_DAYS = 3650; // ~10 years
+  const HISTORY_MODEL_WINDOW = 120;
+  const HISTORY_BACKEND_WINDOW = 120;
   let enabled = false;
   let recognition = null;
   let idleTimer = null;
@@ -44,6 +48,9 @@
   let sttStream = null;
   let sttStopTimer = null;
   let audioUnlocked = false;
+  let memoryUid = "";
+  let memoryCloudLoaded = false;
+  let pendingFactsSaveTimer = null;
   const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
   const panel = document.createElement("div");
@@ -104,15 +111,170 @@
     }
     try {
       const h = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-      convoHistory = Array.isArray(h) ? h.slice(-20) : [];
+      if (!Array.isArray(h)) {
+        convoHistory = [];
+      } else {
+        convoHistory = h.map(function (item) {
+          if (!item || typeof item !== "object") return null;
+          const role = item.role === "assistant" ? "assistant" : "user";
+          const content = String(item.content || "").slice(0, 1600);
+          if (!content) return null;
+          const tsRaw = Number(item.ts || 0);
+          const ts = Number.isFinite(tsRaw) && tsRaw > 0 ? tsRaw : Date.now();
+          return { role: role, content: content, ts: ts };
+        }).filter(Boolean);
+      }
     } catch (e) {
       convoHistory = [];
     }
+    saveMemory();
   }
 
   function saveMemory() {
+    const now = Date.now();
+    const maxAgeMs = HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const filteredHistory = (Array.isArray(convoHistory) ? convoHistory : []).filter(function (m) {
+      if (!m || !m.content) return false;
+      const ts = Number(m.ts || 0) || now;
+      return (now - ts) <= maxAgeMs;
+    });
+    convoHistory = filteredHistory.slice(-HISTORY_MAX_ITEMS);
     try { localStorage.setItem(MEMORY_KEY, JSON.stringify(knownFacts || {})); } catch (e) {}
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify((convoHistory || []).slice(-20))); } catch (e) {}
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(convoHistory || [])); } catch (e) {}
+  }
+
+  function getCurrentUid() {
+    try {
+      if (window.Auth && window.Auth.getUser) {
+        const u = window.Auth.getUser();
+        if (u && u.uid) return String(u.uid);
+      }
+    } catch (e) {}
+    try {
+      if (window.firebase && firebase.auth) {
+        const cu = firebase.auth().currentUser;
+        if (cu && cu.uid) return String(cu.uid);
+      }
+    } catch (e) {}
+    return "";
+  }
+
+  function getFirestoreDb() {
+    try {
+      if (!window.firebase || !firebase.firestore) return null;
+      return firebase.firestore();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function dedupeHistoryEntries(items) {
+    const arr = Array.isArray(items) ? items : [];
+    const seen = new Set();
+    const out = [];
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const m = arr[i];
+      if (!m || !m.content) continue;
+      const role = m.role === "assistant" ? "assistant" : "user";
+      const content = String(m.content || "").slice(0, 1600);
+      if (!content) continue;
+      const ts = Number(m.ts || 0) || Date.now();
+      const key = role + "|" + content + "|" + String(Math.floor(ts / 1000));
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ role: role, content: content, ts: ts });
+    }
+    out.reverse();
+    return out.slice(-HISTORY_MAX_ITEMS);
+  }
+
+  async function loadCloudMemoryForUid(uid) {
+    const userId = String(uid || "").trim();
+    const db = getFirestoreDb();
+    if (!db || !userId) return false;
+    try {
+      const profileRef = db.collection("users").doc(userId).collection("pi").doc("profile");
+      const profileSnap = await profileRef.get();
+      const remoteFacts = profileSnap && profileSnap.exists ? (profileSnap.data() || {}) : {};
+
+      const histRef = db.collection("users").doc(userId).collection("pi_history");
+      const histSnap = await histRef.orderBy("ts_ms", "desc").limit(HISTORY_MAX_ITEMS).get();
+      const remoteHistory = [];
+      if (histSnap && histSnap.forEach) {
+        histSnap.forEach(function (d) {
+          const data = d && d.data ? d.data() : {};
+          const role = data && data.role === "assistant" ? "assistant" : "user";
+          const content = String((data && data.content) || "").slice(0, 1600);
+          if (!content) return;
+          const ts = Number((data && data.ts_ms) || 0) || Date.now();
+          remoteHistory.push({ role: role, content: content, ts: ts });
+        });
+      }
+      remoteHistory.reverse();
+
+      knownFacts = Object.assign({}, knownFacts || {}, remoteFacts || {});
+      convoHistory = dedupeHistoryEntries((convoHistory || []).concat(remoteHistory || []));
+      saveMemory();
+      memoryCloudLoaded = true;
+      dbg("cloud memory loaded", "facts:", Object.keys(knownFacts || {}).length, "history:", convoHistory.length);
+      return true;
+    } catch (e) {
+      dbg("cloud memory load failed", e && e.message);
+      return false;
+    }
+  }
+
+  async function saveHistoryEntryToCloud(role, content, ts) {
+    const db = getFirestoreDb();
+    const uid = memoryUid || getCurrentUid();
+    if (!db || !uid) return;
+    try {
+      await db.collection("users").doc(uid).collection("pi_history").add({
+        role: role === "assistant" ? "assistant" : "user",
+        content: String(content || "").slice(0, 1600),
+        ts_ms: Number(ts || Date.now()),
+        ts: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      dbg("cloud history save failed", e && e.message);
+    }
+  }
+
+  async function saveKnownFactsToCloud() {
+    const db = getFirestoreDb();
+    const uid = memoryUid || getCurrentUid();
+    if (!db || !uid) return;
+    try {
+      await db.collection("users").doc(uid).collection("pi").doc("profile").set(knownFacts || {}, { merge: true });
+    } catch (e) {
+      dbg("cloud facts save failed", e && e.message);
+    }
+  }
+
+  function scheduleKnownFactsCloudSave() {
+    try {
+      if (pendingFactsSaveTimer) clearTimeout(pendingFactsSaveTimer);
+    } catch (e) {}
+    pendingFactsSaveTimer = setTimeout(function () {
+      pendingFactsSaveTimer = null;
+      saveKnownFactsToCloud();
+    }, 600);
+  }
+
+  function initCloudMemorySync() {
+    if (!window.firebase || !firebase.auth) return;
+    try {
+      firebase.auth().onAuthStateChanged(async function (user) {
+        memoryUid = user && user.uid ? String(user.uid) : "";
+        if (!memoryUid) {
+          memoryCloudLoaded = false;
+          return;
+        }
+        if (!memoryCloudLoaded) await loadCloudMemoryForUid(memoryUid);
+      });
+    } catch (e) {
+      dbg("cloud memory auth listener failed", e && e.message);
+    }
   }
 
   function mergeKnownFacts(nextFacts) {
@@ -128,12 +290,59 @@
     });
     knownFacts = merged;
     saveMemory();
+    scheduleKnownFactsCloudSave();
   }
 
   function pushHistory(role, content) {
-    convoHistory.push({ role: role === "assistant" ? "assistant" : "user", content: String(content || "").slice(0, 1200) });
-    if (convoHistory.length > 20) convoHistory = convoHistory.slice(-20);
+    const ts = Date.now();
+    convoHistory.push({
+      role: role === "assistant" ? "assistant" : "user",
+      content: String(content || "").slice(0, 1600),
+      ts: ts,
+    });
+    if (convoHistory.length > HISTORY_MAX_ITEMS) convoHistory = convoHistory.slice(-HISTORY_MAX_ITEMS);
     saveMemory();
+    saveHistoryEntryToCloud(role, content, ts);
+  }
+
+  function getRecentHistory(limit) {
+    const n = Math.max(1, Number(limit || 20));
+    return (Array.isArray(convoHistory) ? convoHistory : []).slice(-n).map(function (m) {
+      return { role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "") };
+    });
+  }
+
+  function buildLongTermMemoryContext() {
+    const facts = knownFacts && typeof knownFacts === "object" ? knownFacts : {};
+    const rows = [];
+    const factKeys = Object.keys(facts);
+    if (factKeys.length) {
+      rows.push("Known profile:");
+      factKeys.forEach(function (k) {
+        const v = facts[k];
+        const text = typeof v === "boolean" ? String(v) : String(v || "").trim();
+        if (text) rows.push("- " + k + ": " + text.slice(0, 180));
+      });
+    }
+
+    const all = Array.isArray(convoHistory) ? convoHistory : [];
+    if (all.length) {
+      const older = all.slice(0, Math.max(0, all.length - 24));
+      const stride = Math.max(1, Math.floor(older.length / 12));
+      const sampled = [];
+      for (let i = 0; i < older.length; i += stride) {
+        sampled.push(older[i]);
+        if (sampled.length >= 12) break;
+      }
+      if (sampled.length) {
+        rows.push("Long-term conversation traces:");
+        sampled.forEach(function (m) {
+          const who = m.role === "assistant" ? "Tutor" : "User";
+          rows.push("- " + who + ": " + String(m.content || "").replace(/\s+/g, " ").slice(0, 140));
+        });
+      }
+    }
+    return rows.join("\n").slice(0, 3200);
   }
 
   function setAssistantState(kind, label) {
@@ -853,9 +1062,10 @@
             language: language,
             subject: subject,
             title: "Personal Intelligence",
-            history: convoHistory.slice(-12),
+            history: getRecentHistory(HISTORY_BACKEND_WINDOW),
             known_facts: knownFacts,
             mode: mode,
+            memory_context: buildLongTermMemoryContext(),
             system_prompt: buildTutorSystemPrompt(mode, language, subject, knownFacts),
           }),
         });
@@ -873,11 +1083,10 @@
 
       await ensurePuterReady(false);
       const model = getPIModel();
-      const recent = convoHistory.slice(-10).map(function (m) {
-        return { role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "") };
-      });
+      const recent = getRecentHistory(HISTORY_MODEL_WINDOW);
+      const memoryContext = buildLongTermMemoryContext();
       const chatMessages = [
-        { role: "system", content: buildTutorSystemPrompt(mode, language, subject, knownFacts) + "\nConversation mode: " + mode },
+        { role: "system", content: buildTutorSystemPrompt(mode, language, subject, knownFacts) + "\nConversation mode: " + mode + (memoryContext ? ("\n\nLong-term memory context:\n" + memoryContext) : "") },
       ].concat(recent).concat([{ role: "user", content: t }]);
 
       const puterResp = await window.puter.ai.chat(chatMessages, { model: model });
@@ -899,9 +1108,10 @@
             language: localStorage.getItem("g9_language") || "English",
             subject: localStorage.getItem("g9_subject") || "General",
             title: "Personal Intelligence",
-            history: convoHistory.slice(-12),
+            history: getRecentHistory(HISTORY_BACKEND_WINDOW),
             known_facts: knownFacts,
             mode: detectSupportMode(t),
+            memory_context: buildLongTermMemoryContext(),
             system_prompt: buildTutorSystemPrompt(detectSupportMode(t), localStorage.getItem("g9_language") || "English", localStorage.getItem("g9_subject") || "General", knownFacts),
           }),
         });
@@ -1124,6 +1334,7 @@
   };
 
   loadMemory();
+  initCloudMemorySync();
   initPISettingsSelectors().catch(function (e) { dbg("init PI settings selectors failed", e && e.message); });
   setEnabled(false);
   try {

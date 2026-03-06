@@ -241,15 +241,19 @@ async function geminiChatReply(message, history, language, subject, knownFacts, 
   const envModel = sanitizeModelId(process.env.GEMINI_PERSONAL_MODEL || "gemini-2.5-flash");
   const maxOutputTokens = Number(process.env.GEMINI_PERSONAL_MAX_TOKENS || 140);
   const baseUrl = String(process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").trim();
+  const memoryContext = String((opts && opts.memory_context) || "").trim();
   const defaultSystemInstruction =
     `You are Tutor, a warm and capable personal assistant for a student. Speak in ${language}. ` +
     `Keep replies short, natural, and practical. Default to 1-2 short sentences unless the user asks for detailed steps. ` +
     `Help with daily tasks and study support in ${subject}. ` +
     `Use known user facts when relevant to personalize responses naturally.`;
-  const systemInstruction = String((opts && opts.system_prompt) || "").trim() || defaultSystemInstruction;
+  const baseSystemInstruction = String((opts && opts.system_prompt) || "").trim() || defaultSystemInstruction;
+  const systemInstruction = memoryContext
+    ? `${baseSystemInstruction}\n\nLong-term memory context:\n${memoryContext.slice(0, 3500)}`
+    : baseSystemInstruction;
 
   const contents = [];
-  const h = Array.isArray(history) ? history.slice(-8) : [];
+  const h = Array.isArray(history) ? history.slice(-120) : [];
   for (const item of h) {
     if (!item || !item.role || !item.content) continue;
     contents.push({
@@ -358,6 +362,7 @@ exports.handler = async function handler(event) {
   const llm = action ? null : await geminiChatReply(message, history, language, subject, mergedKnownFacts, {
     model: payload && payload.model,
     system_prompt: payload && payload.system_prompt,
+    memory_context: payload && payload.memory_context,
   });
   const answer = action && action.message ? String(action.message) : llm.answer;
   const speakText = action && action.message ? buildSpeakText(action.message) : String(llm.speak_text || buildSpeakText(answer));
