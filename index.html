@@ -246,12 +246,6 @@
               </select>
             </div>
             <div class="setting-item">
-              <label for="mainModelSelect">Main Model</label>
-              <select id="mainModelSelect" class="select" aria-label="Select main model">
-                <option value="">Loading models...</option>
-              </select>
-            </div>
-            <div class="setting-item">
               <label for="ttsVoiceSelect">AI Voice (Text-to-Speech)</label>
               <select id="ttsVoiceSelect" class="select" aria-label="Select AI voice">
                 <option value="">Auto (best available)</option>
@@ -264,11 +258,28 @@
                 <option value="">Loading ElevenLabs voices...</option>
               </select>
             </div>
-            <div class="setting-item">
-              <label for="piModelSelect">Perosonal Intelligence Model</label>
-              <select id="piModelSelect" class="select" aria-label="Select Personal Intelligence model">
-                <option value="">Loading models...</option>
-              </select>
+            <div class="admin-settings-card" id="adminSettingsCard">
+              <div class="admin-settings-head">
+                <div>
+                  <div class="admin-settings-title">Administrative Settings</div>
+                  <div class="admin-settings-subtitle" id="adminSettingsStatus">Locked. Re-authenticate to edit AI models.</div>
+                </div>
+                <button class="icon-btn btn-clear" id="adminUnlockBtn" type="button" aria-label="Unlock Administrative Settings">Unlock</button>
+              </div>
+              <div class="admin-settings-fields is-locked" id="adminSettingsFields">
+                <div class="setting-item">
+                  <label for="mainModelSelect">Main Model</label>
+                  <select id="mainModelSelect" class="select" aria-label="Select main model">
+                    <option value="">Loading models...</option>
+                  </select>
+                </div>
+                <div class="setting-item">
+                  <label for="piModelSelect">Perosonal Intelligence Model</label>
+                  <select id="piModelSelect" class="select" aria-label="Select Personal Intelligence model">
+                    <option value="">Loading models...</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div class="setting-item">
               <label for="defaultSubject">Default Subject</label>
@@ -500,6 +511,25 @@
   </div>
 
   <div class="toast-wrap" id="toasts" aria-live="assertive" aria-atomic="true"></div>
+  <div class="modal-overlay" id="adminUnlockModal" aria-hidden="true">
+    <div class="modal-panel admin-modal-panel" role="dialog" aria-modal="true" aria-labelledby="adminUnlockTitle">
+      <div class="modal-header">
+        <div class="modal-title" id="adminUnlockTitle">Unlock Administrative Settings</div>
+        <button class="modal-close" id="adminUnlockClose" type="button" aria-label="Close">x</button>
+      </div>
+      <div class="modal-content">
+        <div class="admin-modal-text">Re-authenticate the signed-in Google account to unlock model controls.</div>
+        <div class="setting-item">
+          <label for="adminUnlockEmail">Google Account</label>
+          <input id="adminUnlockEmail" class="select admin-email-input" type="email" readonly value="" />
+        </div>
+        <div class="admin-modal-actions">
+          <button class="icon-btn btn-clear" id="adminUnlockCancel" type="button">Cancel</button>
+          <button class="icon-btn btn-primary" id="adminUnlockConfirm" type="button">Continue with Google</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="api.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
@@ -528,7 +558,7 @@
   <script src="ExamModeToggle/ExamModeContext.js?v=20251225"></script>
   <script src="ExamModeToggle/ExamModeUI.js?v=20251225"></script>
   <script src="ExamModeToggle/ExamModeToggle.js?v=20251225"></script>
-  <script src="script.js?v=20251225"></script>
+  <script src="script.js?v=20260306admin1"></script>
   <script src="personal_intelligence_ui.js?v=20260306puterbrain2"></script>
   <svg style="display:none">
     <defs>

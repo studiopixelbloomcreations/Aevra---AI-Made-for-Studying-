@@ -20,6 +20,14 @@
   const composerEl = document.querySelector('.composer');
   const settingsLanguage = document.getElementById('settingsLanguage');
   const mainModelSelect = document.getElementById('mainModelSelect');
+  const adminSettingsFields = document.getElementById('adminSettingsFields');
+  const adminSettingsStatus = document.getElementById('adminSettingsStatus');
+  const adminUnlockBtn = document.getElementById('adminUnlockBtn');
+  const adminUnlockModal = document.getElementById('adminUnlockModal');
+  const adminUnlockClose = document.getElementById('adminUnlockClose');
+  const adminUnlockCancel = document.getElementById('adminUnlockCancel');
+  const adminUnlockConfirm = document.getElementById('adminUnlockConfirm');
+  const adminUnlockEmail = document.getElementById('adminUnlockEmail');
   const defaultSubject = document.getElementById('defaultSubject');
   const themeOptions = document.querySelectorAll('.theme-option');
   const themeToggleBtn = document.querySelector('.theme-toggle-btn');
@@ -36,6 +44,7 @@
   let examModePapersLoaded = false;
   let examModePdfLinks = [];
   const MAIN_MODEL_KEY = 'main_model';
+  const ADMIN_UNLOCK_KEY = 'g9_admin_unlock_uid';
   const MAIN_MODEL_DEFAULT = 'google/gemini-2.5-flash';
   const MAIN_MODEL_OPTIONS_FALLBACK = [
     { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash' },
@@ -456,6 +465,87 @@
     return true;
   }
 
+  function getFirebaseCurrentUser(){
+    try{
+      if(window.firebase && firebase.auth && firebase.apps && firebase.apps.length){
+        return firebase.auth().currentUser || null;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function isAdminUnlocked(){
+    const u = getFirebaseCurrentUser();
+    if(!u || !u.uid) return false;
+    try { return localStorage.getItem(ADMIN_UNLOCK_KEY) === String(u.uid); } catch (e) { return false; }
+  }
+
+  function setAdminUnlocked(unlocked){
+    const yes = !!unlocked;
+    if(adminSettingsFields){
+      adminSettingsFields.classList.toggle('is-locked', !yes);
+      adminSettingsFields.style.display = yes ? '' : 'none';
+    }
+    if(adminSettingsStatus){
+      adminSettingsStatus.textContent = yes
+        ? 'Unlocked for this signed-in account.'
+        : 'Locked. Re-authenticate to edit AI models.';
+    }
+    if(adminUnlockBtn){
+      adminUnlockBtn.textContent = yes ? 'Unlocked' : 'Unlock';
+    }
+    const u = getFirebaseCurrentUser();
+    try{
+      if(yes && u && u.uid){
+        localStorage.setItem(ADMIN_UNLOCK_KEY, String(u.uid));
+      } else {
+        localStorage.removeItem(ADMIN_UNLOCK_KEY);
+      }
+    } catch (e) {}
+  }
+
+  function openAdminUnlockModal(){
+    if(!adminUnlockModal) return;
+    const u = getFirebaseCurrentUser();
+    if(adminUnlockEmail){
+      adminUnlockEmail.value = (u && u.email) ? String(u.email) : (localStorage.getItem('g9_email') || '');
+    }
+    adminUnlockModal.classList.add('active');
+    adminUnlockModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeAdminUnlockModal(){
+    if(!adminUnlockModal) return;
+    adminUnlockModal.classList.remove('active');
+    adminUnlockModal.setAttribute('aria-hidden', 'true');
+  }
+
+  async function unlockAdministrativeSettings(){
+    try{
+      if(!window.firebase || !firebase.auth || !firebase.apps || !firebase.apps.length){
+        toast('Firebase not ready. Refresh and try again.');
+        return;
+      }
+      const user = firebase.auth().currentUser;
+      if(!user){
+        toast('Please sign in first.');
+        return;
+      }
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await user.reauthenticateWithPopup(provider);
+      setAdminUnlocked(true);
+      closeAdminUnlockModal();
+      toast('Administrative Settings unlocked.');
+    } catch (e){
+      const msg = String((e && e.message) || '');
+      if(msg.toLowerCase().includes('popup')){
+        toast('Popup blocked. Allow popups and try again.');
+      } else {
+        toast('Verification failed. Please try again.');
+      }
+    }
+  }
+
   async function ensurePuterReady(interactive){
     if(!window.puter || !window.puter.ai) throw new Error('PUTER_NOT_LOADED');
     if(!window.puter.auth || !window.puter.auth.isSignedIn || !window.puter.auth.signIn) return;
@@ -536,6 +626,31 @@
       mainModelSelect.value = hasCurrent ? current : String(fresh[0].id);
       if(!hasCurrent) setMainModel(mainModelSelect.value);
     });
+  }
+
+  function initAdministrativeSettingsLock(){
+    setAdminUnlocked(isAdminUnlocked());
+    if(adminUnlockBtn){
+      adminUnlockBtn.addEventListener('click', function(){
+        if(isAdminUnlocked()) return;
+        openAdminUnlockModal();
+      });
+    }
+    if(adminUnlockClose) adminUnlockClose.addEventListener('click', closeAdminUnlockModal);
+    if(adminUnlockCancel) adminUnlockCancel.addEventListener('click', closeAdminUnlockModal);
+    if(adminUnlockConfirm) adminUnlockConfirm.addEventListener('click', function(){ unlockAdministrativeSettings(); });
+    if(adminUnlockModal){
+      adminUnlockModal.addEventListener('click', function(ev){
+        if(ev.target === adminUnlockModal) closeAdminUnlockModal();
+      });
+    }
+    try{
+      if(window.firebase && firebase.auth && firebase.apps && firebase.apps.length){
+        firebase.auth().onAuthStateChanged(function(){
+          setAdminUnlocked(isAdminUnlocked());
+        });
+      }
+    } catch (e) {}
   }
 
   // Account wiring (Google identity + logout)
@@ -1032,6 +1147,7 @@
   });
 
   // Events
+  initAdministrativeSettingsLock();
   initMainModelSelector().catch((e)=>{
     console.error('Main model selector init failed:', e);
   });
