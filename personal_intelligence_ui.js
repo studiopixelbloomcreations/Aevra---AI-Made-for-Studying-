@@ -145,15 +145,15 @@
 
   function getCurrentUid() {
     try {
-      if (window.Auth && window.Auth.getUser) {
-        const u = window.Auth.getUser();
-        if (u && u.uid) return String(u.uid);
+      if (window.firebase && firebase.auth && firebase.apps && firebase.apps.length) {
+        const cu = firebase.auth().currentUser;
+        if (cu && cu.uid) return String(cu.uid);
       }
     } catch (e) {}
     try {
-      if (window.firebase && firebase.auth) {
-        const cu = firebase.auth().currentUser;
-        if (cu && cu.uid) return String(cu.uid);
+      if (window.Auth && window.Auth.getUser) {
+        const u = window.Auth.getUser();
+        if (u && u.uid) return String(u.uid);
       }
     } catch (e) {}
     return "";
@@ -163,6 +163,17 @@
     try {
       if (!window.firebase || !firebase.firestore) return null;
       return firebase.firestore();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getFirebaseAuthedUser() {
+    try {
+      if (!window.firebase || !firebase.auth || !firebase.apps || !firebase.apps.length) return null;
+      const u = firebase.auth().currentUser;
+      if (!u || !u.uid) return null;
+      return u;
     } catch (e) {
       return null;
     }
@@ -226,8 +237,9 @@
 
   async function saveHistoryEntryToCloud(role, content, ts) {
     const db = getFirestoreDb();
-    const uid = memoryUid || getCurrentUid();
-    if (!db || !uid) return;
+    const au = getFirebaseAuthedUser();
+    const uid = au && au.uid ? String(au.uid) : (memoryUid || getCurrentUid());
+    if (!db || !uid || !au) return;
     try {
       await db.collection("users").doc(uid).collection("pi_history").add({
         role: role === "assistant" ? "assistant" : "user",
@@ -242,8 +254,9 @@
 
   async function saveKnownFactsToCloud() {
     const db = getFirestoreDb();
-    const uid = memoryUid || getCurrentUid();
-    if (!db || !uid) return;
+    const au = getFirebaseAuthedUser();
+    const uid = au && au.uid ? String(au.uid) : (memoryUid || getCurrentUid());
+    if (!db || !uid || !au) return;
     try {
       await db.collection("users").doc(uid).collection("pi").doc("profile").set(knownFacts || {}, { merge: true });
     } catch (e) {
@@ -262,19 +275,33 @@
   }
 
   function initCloudMemorySync() {
-    if (!window.firebase || !firebase.auth) return;
-    try {
-      firebase.auth().onAuthStateChanged(async function (user) {
-        memoryUid = user && user.uid ? String(user.uid) : "";
-        if (!memoryUid) {
-          memoryCloudLoaded = false;
+    (async function () {
+      try {
+        if (window.Auth && window.Auth.init) {
+          try { await window.Auth.init(); } catch (e) {}
+        }
+        let retries = 0;
+        while (retries < 30) {
+          if (window.firebase && firebase.auth && firebase.apps && firebase.apps.length) break;
+          await new Promise(function (resolve) { setTimeout(resolve, 200); });
+          retries += 1;
+        }
+        if (!window.firebase || !firebase.auth || !firebase.apps || !firebase.apps.length) {
+          dbg("cloud memory disabled: firebase app not initialized");
           return;
         }
-        if (!memoryCloudLoaded) await loadCloudMemoryForUid(memoryUid);
-      });
-    } catch (e) {
-      dbg("cloud memory auth listener failed", e && e.message);
-    }
+        firebase.auth().onAuthStateChanged(async function (user) {
+          memoryUid = user && user.uid ? String(user.uid) : "";
+          if (!memoryUid) {
+            memoryCloudLoaded = false;
+            return;
+          }
+          if (!memoryCloudLoaded) await loadCloudMemoryForUid(memoryUid);
+        });
+      } catch (e) {
+        dbg("cloud memory auth listener failed", e && e.message);
+      }
+    })();
   }
 
   function mergeKnownFacts(nextFacts) {
