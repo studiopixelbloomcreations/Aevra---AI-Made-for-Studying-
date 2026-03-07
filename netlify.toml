@@ -5,6 +5,11 @@
 [functions]
   directory = "netlify/functions"
 
+[[redirects]]
+  from = "/"
+  to = "/landing.html"
+  status = 302
+
 # API redirect to Netlify Functions
 [[redirects]]
   from = "/health"

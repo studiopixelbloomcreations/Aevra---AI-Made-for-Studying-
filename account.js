@@ -59,7 +59,7 @@
           return;
         }
       } catch (e) {}
-      window.location.href = 'login.html?return=index.html';
+    window.location.href = 'login.html?return=app.html';
     }
 
     function ensureAccountModal(){

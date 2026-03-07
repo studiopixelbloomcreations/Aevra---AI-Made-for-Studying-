@@ -20,9 +20,9 @@ html[data-theme="light"] {
   --bg-3: #f7fbff;
   --text: #0b1c31;
   --subtext: rgba(11, 28, 49, 0.8);
-  --surface: rgba(255, 255, 255, 0.72);
+  --surface: rgba(255, 255, 255, 0.76);
   --border: rgba(11, 28, 49, 0.18);
-  --card: rgba(255, 255, 255, 0.74);
+  --card: rgba(255, 255, 255, 0.76);
   --cta-text: #041320;
   --cta-bg: linear-gradient(130deg, #6ae3d8, #74d5ff);
   --shadow: 0 18px 48px rgba(36, 66, 99, 0.18);
@@ -38,6 +38,7 @@ html, body {
 }
 
 body {
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 10% 8%, rgba(255, 120, 54, 0.28), transparent 36%),
     radial-gradient(circle at 85% 18%, rgba(17, 179, 255, 0.35), transparent 34%),
@@ -52,11 +53,21 @@ body {
   padding: 22px clamp(18px, 3.2vw, 52px) 28px;
 }
 
+.lp-particle-field {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .lp-noise {
   position: fixed;
   inset: 0;
   opacity: 0.12;
   pointer-events: none;
+  z-index: 0;
   background-image: radial-gradient(rgba(255, 255, 255, 0.46) 0.55px, transparent 0.55px);
   background-size: 3px 3px;
 }
@@ -66,6 +77,8 @@ body {
   border-radius: 50%;
   filter: blur(8px);
   pointer-events: none;
+  z-index: 0;
+  transition: transform 120ms linear;
   animation: lpFloat 15s ease-in-out infinite;
 }
 .lp-orb-a { width: 320px; height: 320px; top: -64px; right: -34px; background: radial-gradient(circle, rgba(255, 118, 118, 0.7), rgba(255, 118, 118, 0)); }
@@ -76,8 +89,10 @@ body {
 .lp-hero,
 .lp-grid,
 .lp-demo,
+.lp-section,
 .lp-pricing,
-.lp-testimonials {
+.lp-testimonials,
+.lp-final {
   position: relative;
   z-index: 1;
   max-width: 1160px;
@@ -96,6 +111,7 @@ body {
   gap: 14px;
   justify-content: space-between;
 }
+
 .lp-brand { display: flex; align-items: center; gap: 10px; }
 .lp-brand-mark {
   width: 38px;
@@ -108,7 +124,7 @@ body {
   color: #041320;
 }
 .lp-brand-text { font-size: 16px; font-weight: 700; }
-.lp-links { display: flex; gap: 26px; }
+.lp-links { display: flex; gap: 22px; }
 .lp-links a { color: var(--subtext); text-decoration: none; font-size: 14px; }
 .lp-nav-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -121,6 +137,7 @@ body {
   font-weight: 700;
   text-decoration: none;
 }
+
 .lp-nav-cta,
 .lp-btn-primary,
 .lp-plan-btn {
@@ -129,6 +146,7 @@ body {
   background: var(--cta-bg);
   cursor: pointer;
 }
+
 .lp-btn-ghost {
   border: 1px solid var(--border);
   color: var(--text);
@@ -164,10 +182,25 @@ body {
 }
 .lp-actions { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; }
 
+.lp-proof-row {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.lp-proof-item {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 14px;
+}
+.lp-proof-item span { display: block; font-weight: 800; }
+.lp-proof-item small { color: var(--subtext); }
+
 .lp-grid {
   margin-top: 34px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 .lp-card {
@@ -181,8 +214,10 @@ body {
 .lp-card p { margin: 0; color: var(--subtext); line-height: 1.55; }
 
 .lp-demo,
-.lp-pricing {
-  margin-top: 14px;
+.lp-pricing,
+.lp-section,
+.lp-final {
+  margin-top: 20px;
   border-radius: 18px;
   border: 1px solid var(--border);
   background: var(--card);
@@ -208,7 +243,6 @@ body {
   margin: 0 0 10px;
   font-size: clamp(24px, 4vw, 38px);
   line-height: 1.1;
-  font-family: 'Space Grotesk', 'Manrope', sans-serif;
 }
 .lp-demo-copy p { margin: 0; color: var(--subtext); line-height: 1.6; }
 .lp-demo-window {
@@ -233,14 +267,49 @@ html[data-theme="light"] .lp-demo-window { background: rgba(255, 255, 255, 0.7);
 .lp-user { justify-self: end; border: 1px solid rgba(151, 255, 211, 0.4); background: linear-gradient(160deg, rgba(121, 255, 204, 0.22), rgba(112, 230, 255, 0.12)); }
 .lp-ai { justify-self: start; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.07); }
 
-.lp-pricing-head p { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: rgba(179, 255, 231, 0.85); }
-.lp-pricing-head h3 {
-  margin: 10px 0 0;
-  font-size: clamp(24px, 4vw, 40px);
-  max-width: 20ch;
-  line-height: 1.06;
-  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+.lp-section-head p { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: rgba(179, 255, 231, 0.85); }
+.lp-section-head h3 { margin: 10px 0 0; font-size: clamp(24px, 4vw, 40px); max-width: 24ch; line-height: 1.06; }
+
+.lp-feature-catalog {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
+.lp-mini-card {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 14px;
+}
+html[data-theme="light"] .lp-mini-card { background: rgba(255, 255, 255, 0.82); }
+.lp-mini-card h4 { margin: 0 0 6px; font-size: 15px; }
+.lp-mini-card p { margin: 0; font-size: 13px; color: var(--subtext); line-height: 1.5; }
+
+.lp-journey-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.lp-journey-step {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 14px;
+}
+.lp-journey-step span {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(131, 255, 197, 0.15);
+}
+.lp-journey-step h4 { margin: 10px 0 8px; font-size: 17px; }
+.lp-journey-step p { margin: 0; color: var(--subtext); }
+
+.lp-pricing-head p { margin: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: rgba(179, 255, 231, 0.85); }
+.lp-pricing-head h3 { margin: 10px 0 0; font-size: clamp(24px, 4vw, 40px); max-width: 20ch; line-height: 1.06; }
 .lp-pricing-grid { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .lp-plan { border-radius: 16px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04); padding: 16px; }
 html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
@@ -250,9 +319,10 @@ html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
 .lp-plan-price { margin: 0; font-size: 34px; font-weight: 800; }
 .lp-plan-price span { font-size: 14px; opacity: 0.75; font-weight: 600; }
 .lp-plan ul { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 6px; color: var(--subtext); }
+.lp-plan-btn { margin-top: 14px; width: 100%; }
 
 .lp-testimonials {
-  margin-top: 14px;
+  margin-top: 20px;
   margin-bottom: 18px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -267,6 +337,9 @@ html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
 .lp-testimonial p { margin: 0 0 12px; color: var(--subtext); }
 .lp-testimonial strong { font-size: 14px; color: rgba(185, 255, 224, 0.95); }
 
+.lp-final h3 { margin: 0; font-size: clamp(24px, 4vw, 40px); }
+.lp-final p { color: var(--subtext); max-width: 72ch; }
+
 .lp-reveal {
   opacity: 0;
   transform: translateY(24px);
@@ -279,24 +352,25 @@ html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
   50% { transform: translateY(-22px) translateX(8px); }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1080px) {
   .lp-links { display: none; }
-  .lp-demo,
+  .lp-proof-row,
   .lp-grid,
+  .lp-demo,
+  .lp-feature-catalog,
+  .lp-journey-grid,
   .lp-pricing-grid,
-  .lp-testimonials {
-    grid-template-columns: 1fr;
-  }
+  .lp-testimonials { grid-template-columns: 1fr 1fr; }
 }
 
-@media (max-width: 700px) {
-  .lp-nav {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .lp-nav-actions {
-    width: 100%;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
+@media (max-width: 760px) {
+  .lp-nav { align-items: flex-start; flex-direction: column; }
+  .lp-nav-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .lp-proof-row,
+  .lp-grid,
+  .lp-demo,
+  .lp-feature-catalog,
+  .lp-journey-grid,
+  .lp-pricing-grid,
+  .lp-testimonials { grid-template-columns: 1fr; }
 }

@@ -410,7 +410,7 @@
           hasExamModeContext: !!window.ExamModeContext,
           hasExamModeUI: !!window.ExamModeUI
         });
-        toast('Exam Mode scripts did not load. Make sure you are opening index.html (not index_v2.html) and hard refresh (Ctrl+F5).',{duration:8000});
+          toast('Exam Mode scripts did not load. Make sure you are opening app.html and hard refresh (Ctrl+F5).',{duration:8000});
       }
     } catch (e) {}
   }
@@ -806,7 +806,7 @@
             if(handleUserInputFn) setupResult = handleUserInputFn(text);
             else {
               console.error('ExamModeUI.handleUserInput missing');
-              try { toast('Exam Mode UI is not ready. Open index.html and hard refresh (Ctrl+F5).',{duration:8000}); } catch (e) {}
+      try { toast('Exam Mode UI is not ready. Open app.html and hard refresh (Ctrl+F5).',{duration:8000}); } catch (e) {}
             }
 
             // If the user just finished the 3 setup questions, fetch a random past-paper question.

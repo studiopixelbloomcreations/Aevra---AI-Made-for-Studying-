@@ -7,9 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function getReturnTarget(){
     try {
       const params = new URLSearchParams(window.location.search);
-      return params.get('return') || 'landing.html';
+      return params.get('return') || 'index.html';
     } catch (e) {
-      return 'landing.html';
+      return 'index.html';
     }
   }
 

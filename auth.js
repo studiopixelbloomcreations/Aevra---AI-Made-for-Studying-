@@ -99,7 +99,7 @@
   }
 
   function redirectToLogin(){
-    const returnTo = encodeURIComponent(window.location.pathname.split('/').pop() || 'index.html');
+    const returnTo = encodeURIComponent(window.location.pathname.split('/').pop() || 'app.html');
     window.location.href = 'login.html?return=' + returnTo;
   }
 
