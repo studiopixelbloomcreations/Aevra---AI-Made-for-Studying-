@@ -658,41 +658,13 @@
   }
 
   function initLiquidGlassComponents(){
-    try { document.body.classList.add('liquid26'); } catch (e) {}
-    const surfaceSelectors = [
-      '.app-header', '.sidebar', '.chat', '.welcome-panel', '.composer',
-      '.progress-card', '.summary-card', '.profile-card', '.gamification-card',
-      '.account-profile-card', '.modal-panel', '.admin-settings-card',
-      '.recent-chat-item', '.profile-pill-header', '.header-pills'
-    ];
     const buttonSelectors = [
       '.icon-btn', '.send', '.tab-btn', '.study-goal-btn', '.header-tab',
       '.theme-toggle-btn', '#adminUnlockBtn', '#adminUnlockConfirm', '#adminUnlockCancel'
     ];
-    const inputSelectors = ['.input', '.select', 'input[type=\"text\"]', 'input[type=\"email\"]', 'textarea'];
-    const menuSelectors = ['.sidebar-tabs', '.header-actions', '.profile-pills-header'];
-
-    surfaceSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) {
-        el.classList.add('lg-liquid-surface');
-        el.classList.add('liquid-glass');
-      });
-    });
     buttonSelectors.forEach(function (s) {
       document.querySelectorAll(s).forEach(function (el) {
         el.classList.add('lg-liquid-btn');
-        el.classList.add('liquid-glass');
-      });
-    });
-    inputSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) {
-        el.classList.add('lg-liquid-input');
-        el.classList.add('liquid-glass');
-      });
-    });
-    menuSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) {
-        el.classList.add('lg-liquid-menu');
         el.classList.add('liquid-glass');
       });
     });
