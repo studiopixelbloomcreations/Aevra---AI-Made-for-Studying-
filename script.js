@@ -658,14 +658,43 @@
   }
 
   function initLiquidGlassComponents(){
+    try { document.body.classList.add('liquid-full-ui'); } catch (e) {}
+    const surfaceSelectors = [
+      '.app-header', '.sidebar', '.chat', '.welcome-panel', '.composer',
+      '.progress-card', '.summary-card', '.profile-card', '.gamification-card',
+      '.account-profile-card', '.modal-panel', '.admin-settings-card',
+      '.recent-chat-item', '.profile-pill-header', '.header-pills',
+      '.settings-section', '.tab-content', '.chat-messages'
+    ];
     const buttonSelectors = [
       '.icon-btn', '.send', '.tab-btn', '.study-goal-btn', '.header-tab',
       '.theme-toggle-btn', '#adminUnlockBtn', '#adminUnlockConfirm', '#adminUnlockCancel'
     ];
+    const inputSelectors = ['.input', '.select', 'input[type=\"text\"]', 'input[type=\"email\"]', 'textarea'];
+    const menuSelectors = ['.sidebar-tabs', '.header-actions', '.profile-pills-header'];
+
+    surfaceSelectors.forEach(function (s) {
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('ultra-liquid');
+      });
+    });
     buttonSelectors.forEach(function (s) {
       document.querySelectorAll(s).forEach(function (el) {
         el.classList.add('lg-liquid-btn');
         el.classList.add('liquid-glass');
+        el.classList.add('ultra-liquid');
+      });
+    });
+    inputSelectors.forEach(function (s) {
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('liquid-glass');
+        el.classList.add('ultra-liquid');
+      });
+    });
+    menuSelectors.forEach(function (s) {
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('liquid-glass');
+        el.classList.add('ultra-liquid');
       });
     });
 
