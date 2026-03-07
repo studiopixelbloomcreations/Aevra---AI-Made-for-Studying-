@@ -1,6 +1,30 @@
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('signupForm');
   const toast = document.getElementById('toast');
+  const TOKEN_KEY = 'g9_token';
+  const TOKEN_EXP_KEY = 'g9_token_exp';
+
+  function getReturnTarget(){
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('return') || 'landing.html';
+    } catch (e) {
+      return 'landing.html';
+    }
+  }
+
+  async function storeTokenFromUser(user){
+    if(!user) return false;
+    try {
+      const res = await user.getIdTokenResult(true);
+      const expMs = Date.parse(res.expirationTime);
+      localStorage.setItem(TOKEN_KEY, res.token);
+      localStorage.setItem(TOKEN_EXP_KEY, String(expMs));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function showToast(message) {
     toast.textContent = message;
@@ -13,6 +37,21 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function validEmail(e){ return /\S+@\S+\.\S+/.test(e); }
+
+  (async function(){
+    try {
+      const res = await auth.getRedirectResult();
+      if(res && res.user){
+        const ok = await storeTokenFromUser(res.user);
+        if(ok){
+          showToast('Account ready. Redirecting...');
+          setTimeout(()=> window.location.href = getReturnTarget(), 900);
+        }
+      }
+    } catch (e) {
+      console.error('Signup redirect error:', e);
+    }
+  })();
 
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -37,13 +76,40 @@ document.addEventListener('DOMContentLoaded', () => {
         try { await cred.user.sendEmailVerification(); showToast('Account created. Verification sent to email.'); }
         catch(e){ console.warn('Verification email failed', e); showToast('Account created. (Verify email failed)'); }
       }
-      // TEMPORARY: do NOT auto-redirect to login.html so index.html won't always forward to login
-      // Original line (disabled):
-      // setTimeout(()=> window.location.href = 'login.html', 1200);
-      // If you want to restore redirect later, uncomment the line above.
+      await storeTokenFromUser(cred && cred.user);
+      setTimeout(()=> window.location.href = getReturnTarget(), 1000);
     } catch (err) {
       showToast(err.message || 'Signup failed');
     }
+  });
+
+  document.querySelectorAll('.btn-social[data-provider="google"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.addScope('email');
+        let cred = null;
+        try {
+          cred = await auth.signInWithPopup(provider);
+        } catch (popupErr) {
+          const code = popupErr && popupErr.code ? String(popupErr.code) : '';
+          if(code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user'){
+            await auth.signInWithRedirect(provider);
+            return;
+          }
+          throw popupErr;
+        }
+        const ok = await storeTokenFromUser(cred && cred.user);
+        if (!ok) {
+          showToast('Unable to complete signup. Please try again.');
+          return;
+        }
+        showToast('Account ready. Redirecting...');
+        setTimeout(()=> window.location.href = getReturnTarget(), 900);
+      } catch (err) {
+        showToast((err && err.message) ? err.message : 'Google signup failed');
+      }
+    });
   });
 
   // small UX: Enter handling
