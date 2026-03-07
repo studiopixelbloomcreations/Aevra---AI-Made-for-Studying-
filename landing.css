@@ -44,6 +44,7 @@ body {
     radial-gradient(circle at 85% 18%, rgba(17, 179, 255, 0.35), transparent 34%),
     radial-gradient(circle at 60% 92%, rgba(255, 255, 255, 0.10), transparent 34%),
     linear-gradient(130deg, var(--bg-1) 10%, var(--bg-2) 50%, var(--bg-3) 95%);
+  transition: background 360ms ease, color 320ms ease;
 }
 
 .landing-shell {
@@ -98,6 +99,7 @@ body {
   max-width: 1160px;
   margin-left: auto;
   margin-right: auto;
+  transition: background 360ms ease, border-color 320ms ease, color 320ms ease, box-shadow 320ms ease;
 }
 
 .lp-nav {
@@ -281,6 +283,7 @@ html[data-theme="light"] .lp-demo-window { background: rgba(255, 255, 255, 0.7);
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   padding: 14px;
+  transition: background 320ms ease, border-color 320ms ease, color 320ms ease;
 }
 html[data-theme="light"] .lp-mini-card { background: rgba(255, 255, 255, 0.82); }
 .lp-mini-card h4 { margin: 0 0 6px; font-size: 15px; }
@@ -297,6 +300,7 @@ html[data-theme="light"] .lp-mini-card { background: rgba(255, 255, 255, 0.82); 
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   padding: 14px;
+  transition: background 320ms ease, border-color 320ms ease, color 320ms ease;
 }
 .lp-journey-step span {
   display: inline-block;
@@ -333,6 +337,7 @@ html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
   border: 1px solid var(--border);
   background: var(--card);
   padding: 18px;
+  transition: background 320ms ease, border-color 320ms ease, color 320ms ease;
 }
 .lp-testimonial p { margin: 0 0 12px; color: var(--subtext); }
 .lp-testimonial strong { font-size: 14px; color: rgba(185, 255, 224, 0.95); }
@@ -346,6 +351,12 @@ html[data-theme="light"] .lp-plan { background: rgba(255, 255, 255, 0.84); }
   transition: transform 680ms cubic-bezier(.2, .8, .2, 1), opacity 680ms ease;
 }
 .lp-reveal-on { opacity: 1; transform: translateY(0); }
+
+html.theme-animating *,
+html.theme-animating *::before,
+html.theme-animating *::after {
+  transition: background-color 360ms ease, background 360ms ease, color 320ms ease, border-color 320ms ease, box-shadow 320ms ease, filter 320ms ease;
+}
 
 @keyframes lpFloat {
   0%, 100% { transform: translateY(0) translateX(0); }
