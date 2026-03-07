@@ -1,67 +1,55 @@
-/* styles.css — Liquid Glass (SVG frosted filter) */
+/* styles.css - MAX liquid glass, gradients, glows, and animations */
 :root {
   --wallpaper-url: url('https://images.unsplash.com/photo-1559827260-dc66d52bef19?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80');
   --bg: var(--wallpaper-url);
 
-  /* ── Liquid Glass ── */
-  --glass-bg: rgba(255, 255, 255, 0.08);
-  --glass-border: 2px solid transparent;
-  --glass-edge: 0 0 0 2px rgba(255, 255, 255, 0.6);
-  --glass-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
-  --glass-filter: url(#frosted);
-  --glass-filter-light: url(#frosted-light);
+  --panel: rgba(255, 255, 255, 0.15);
+  --panel-2: rgba(255, 255, 255, 0.08);
+  --glass-blur: 12px;
+  --glass-highlight: rgba(255, 255, 255, 0.60);
+  --glass-sheen: rgba(255, 255, 255, 0.40);
+  --glass-backlight: radial-gradient(ellipse at 30% 25%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.10) 40%, rgba(255, 255, 255, 0.00) 80%);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-glow: 0 80px 240px rgba(255, 255, 255, 0.18);
+  --liquid-anim-duration: 16s;
+  --sheen-duration: 8s;
 
-  /* ── Colors ── */
-  --text: #041025;
-  --muted: #5a6478;
-  --accent1: #8b5cf6;
-  --accent2: #06b6d4;
-  --accent3: #ff7ab6;
-
-  /* ── Shape ── */
-  --radius: 28px;
-  --radius-sm: 16px;
-  --radius-xs: 12px;
-
-  /* ── Shadows ── */
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.06), 0 8px 32px rgba(0, 0, 0, 0.04);
-  --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.10);
-
-  /* ── Motion ── */
-  --transition-fast: 200ms cubic-bezier(.2, .9, .3, 1);
-  --transition-smooth: 360ms cubic-bezier(.2, .9, .3, 1);
+  --text:#041025;
+  --muted:#4b5563;
+  --accent1:#8b5cf6;
+  --accent2:#06b6d4;
+  --accent3:#ff7ab6;
+  --radius:22px;
+  --shadow:0 30px 120px rgba(10, 20, 40, 0.08);
+  --transition-fast:200ms cubic-bezier(.2, .9, .3, 1);
+  --glass-backlight: radial-gradient(circle at 20% 12%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.00) 36%);
 }
 
-/* ── Liquid Glass Layer System (SVG frosted) ── */
 .liquidGlass-effect {
   position: absolute;
   z-index: 0;
   inset: 0;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  border-radius: inherit;
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.3) brightness(1.1);
+  filter: url(#glass-distortion) hue-rotate(0deg);
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .liquidGlass-tint {
   z-index: 1;
   position: absolute;
   inset: 0;
-  background: var(--glass-bg);
-  border-radius: inherit;
-  pointer-events: none;
+  background: var(--glass-backlight);
 }
 
 .liquidGlass-shine {
   position: absolute;
   inset: 0;
   z-index: 2;
-  border-radius: inherit;
-  /* White edge glow — the signature liquid glass look */
-  box-shadow:
-    var(--glass-edge),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.15);
-  pointer-events: none;
+  overflow: hidden;
+  box-shadow: inset 2px 2px 1px 0 rgba(255, 255, 255, 0.6),
+    inset -1px -1px 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 0 20px rgba(255, 255, 255, 0.3);
 }
 
 .liquidGlass-content {
@@ -71,19 +59,27 @@
 
 :root[data-theme="dark"] {
   --bg: linear-gradient(135deg,
-      rgba(0, 8, 20, 0.75) 0%,
-      rgba(0, 12, 28, 0.55) 50%,
-      rgba(0, 5, 15, 0.85) 100%),
+      rgba(0, 10, 20, 0.8) 0%,
+      rgba(0, 15, 30, 0.6) 30%,
+      rgba(0, 20, 40, 0.4) 70%,
+      rgba(0, 5, 15, 0.9) 100%),
     var(--wallpaper-url);
 
-  --glass-bg: rgba(15, 20, 35, 0.25);
-  --glass-edge: 0 0 0 2px rgba(255, 255, 255, 0.35);
-  --glass-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  --panel: rgba(15, 25, 35, 0.25);
+  --panel-2: rgba(10, 20, 30, 0.12);
+  --glass-blur: 100px;
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-glow: 0 80px 240px rgba(99, 102, 241, 0.18);
 
   --text: #e8f4ff;
-  --muted: #8da4bc;
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 12px 48px rgba(0, 0, 0, 0.15);
-  --shadow-elevated: 0 12px 56px rgba(0, 0, 0, 0.30);
+  --muted: #b8d4e8;
+  --accent1: #8b5cf6;
+  --accent2: #06b6d4;
+  --accent3: #ff7ab6;
+  --radius: 24px;
+  --shadow: 0 50px 200px rgba(0, 0, 0, 0.8);
+  --glass-backlight: radial-gradient(circle at 15% 10%, rgba(139, 92, 246, 0.12), rgba(6, 182, 212, 0.08), rgba(255, 255, 255, 0.00) 45%);
 }
 
 /* Full viewport layout */
@@ -5020,39 +5016,4 @@ body {
   }
 }
 
-/* Exact frosted-glass behavior extracted from provided code, adapted for full UI components */
-.glass-ui {
-  position: relative;
-  isolation: isolate;
-  background: rgba(255, 255, 255, .08);
-  border: 2px solid transparent;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .6), 0 16px 32px rgba(0, 0, 0, .12);
-}
 
-.glass-ui::before,
-.glass-ui::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.glass-ui::before {
-  backdrop-filter: url(#frosted);
-  -webkit-backdrop-filter: url(#frosted);
-  z-index: 0;
-}
-
-.glass-ui::after {
-  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, .55), inset -1px -1px 1px rgba(255, 255, 255, .35);
-  background: conic-gradient(from 120deg at 50% 50%, rgba(255, 82, 82, .10), rgba(255, 213, 79, .10), rgba(139, 195, 74, .09), rgba(41, 182, 246, .10), rgba(171, 71, 188, .12), rgba(255, 82, 82, .10));
-  mix-blend-mode: screen;
-  opacity: .65;
-  z-index: 1;
-}
-
-.glass-ui > * {
-  position: relative;
-  z-index: 2;
-}
