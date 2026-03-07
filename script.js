@@ -673,16 +673,28 @@
     const menuSelectors = ['.sidebar-tabs', '.header-actions', '.profile-pills-header'];
 
     surfaceSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) { el.classList.add('lg-liquid-surface'); });
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('lg-liquid-surface');
+        el.classList.add('liquid-glass');
+      });
     });
     buttonSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) { el.classList.add('lg-liquid-btn'); });
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('lg-liquid-btn');
+        el.classList.add('liquid-glass');
+      });
     });
     inputSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) { el.classList.add('lg-liquid-input'); });
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('lg-liquid-input');
+        el.classList.add('liquid-glass');
+      });
     });
     menuSelectors.forEach(function (s) {
-      document.querySelectorAll(s).forEach(function (el) { el.classList.add('lg-liquid-menu'); });
+      document.querySelectorAll(s).forEach(function (el) {
+        el.classList.add('lg-liquid-menu');
+        el.classList.add('liquid-glass');
+      });
     });
 
     const themeBtn = document.querySelector('.theme-toggle-btn');

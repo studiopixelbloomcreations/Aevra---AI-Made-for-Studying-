@@ -1,25 +1,4 @@
 /* styles.css - MAX liquid glass, gradients, glows, and animations */
-html,
-body {
-  margin: 0;
-  overflow: hidden;
-  background: #000;
-}
-
-#canvas {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-#sourceImage {
-  display: none;
-}
-
 :root {
   /* Apple-style liquid glass/* vibrant liquid glass wallpaper */
   --wallpaper-url: url('https://images.unsplash.com/photo-1559827260-dc66d52bef19?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80');
@@ -5376,4 +5355,38 @@ body.liquid26 .lg-liquid-slider::after {
   0% { transform: translateX(-65%); opacity: 0.1; }
   36% { transform: translateX(8%); opacity: 0.52; }
   100% { transform: translateX(120%); opacity: 0.08; }
+}
+
+/* Extracted liquid-glass core (SVG filter + CSS distortion + outline shine) */
+.liquid-glass {
+  position: relative;
+  isolation: isolate;
+  background-color: rgb(255 255 255 / 25%);
+  color: rgb(255 255 255 / 90%);
+  text-shadow: 0 2px 4px rgb(0 0 0 / 10%);
+  box-shadow: 0 6px 6px rgb(0 0 0 / 20%), 0 0 20px rgb(0 0 0 / 10%);
+}
+
+.liquid-glass::before,
+.liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.liquid-glass::before {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  filter: url(#glass-distortion);
+  z-index: -1;
+}
+
+.liquid-glass::after {
+  box-shadow: inset 2px 2px 1px 0 rgb(255 255 255 / 50%), inset -1px -1px 1px 1px rgb(255 255 255 / 50%);
+}
+
+.liquid-glass.dragging {
+  cursor: grabbing;
 }
