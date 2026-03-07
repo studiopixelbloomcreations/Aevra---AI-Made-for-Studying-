@@ -1,4 +1,25 @@
 /* styles.css - MAX liquid glass, gradients, glows, and animations */
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+#canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#sourceImage {
+  display: none;
+}
+
 :root {
   /* Apple-style liquid glass/* vibrant liquid glass wallpaper */
   --wallpaper-url: url('https://images.unsplash.com/photo-1559827260-dc66d52bef19?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80');
@@ -567,6 +588,8 @@ body {
 }
 
 .app {
+  position: relative;
+  z-index: 1;
   --sidebar-w: 360px;
   width: 100vw;
   height: 100vh;
