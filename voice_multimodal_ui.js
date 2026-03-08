@@ -111,24 +111,55 @@
   }
 
   function normalizePuterTtsSource(result){
-    if (!result) return null;
-    if (typeof result === 'string') return { src: result, revoke: false };
-    if (result instanceof Blob) return { src: URL.createObjectURL(result), revoke: true };
-    if (result.url) return { src: String(result.url), revoke: false };
-    if (result.audio_url) return { src: String(result.audio_url), revoke: false };
-    if (result.audio instanceof Blob) return { src: URL.createObjectURL(result.audio), revoke: true };
-    if (typeof result.data === 'string' && result.data.startsWith('data:audio')) return { src: result.data, revoke: false };
-    return null;
+    const seen = new Set();
+    function walk(node){
+      if (!node) return null;
+      if (typeof node === 'string') {
+        const s = node.trim();
+        if (/^(blob:|data:audio|https?:\/\/)/i.test(s)) return { src: s, revoke: false };
+        return null;
+      }
+      if (node instanceof Blob) return { src: URL.createObjectURL(node), revoke: true };
+      if (typeof HTMLAudioElement !== 'undefined' && node instanceof HTMLAudioElement && node.src) {
+        return { src: String(node.src), revoke: false };
+      }
+      if (typeof node !== 'object') return null;
+      if (seen.has(node)) return null;
+      seen.add(node);
+      const directKeys = ['url', 'audio_url', 'src', 'href', 'download_url'];
+      for (let i = 0; i < directKeys.length; i += 1) {
+        const k = directKeys[i];
+        if (typeof node[k] === 'string' && node[k].trim()) {
+          const s = node[k].trim();
+          if (/^(blob:|data:audio|https?:\/\/)/i.test(s)) return { src: s, revoke: false };
+        }
+      }
+      if (typeof node.data === 'string' && /^data:audio/i.test(node.data)) return { src: node.data, revoke: false };
+      const nestedKeys = ['audio', 'data', 'result', 'output', 'message', 'content'];
+      for (let i = 0; i < nestedKeys.length; i += 1) {
+        const found = walk(node[nestedKeys[i]]);
+        if (found) return found;
+      }
+      return null;
+    }
+    return walk(result);
   }
 
   async function requestPuterTts(text){
-    await ensurePuterReady(false);
+    await ensurePuterReady(true);
     const ai = window.puter && window.puter.ai;
     if (!ai) throw new Error('PUTER_NOT_LOADED');
     const voiceOptions = getSelectedPuterVoiceOptions();
-    if (typeof ai.txt2speech === 'function') return ai.txt2speech(String(text || ''), voiceOptions);
-    if (typeof ai.text2speech === 'function') return ai.text2speech(String(text || ''), voiceOptions);
-    if (typeof ai.tts === 'function') return ai.tts(String(text || ''), voiceOptions);
+    const payloadA = Object.assign({ text: String(text || '') }, voiceOptions);
+    const payloadB = Object.assign({ input: String(text || '') }, voiceOptions);
+    async function tryMethod(fn){
+      try { return await fn(String(text || ''), voiceOptions); } catch (e1) {}
+      try { return await fn(payloadA); } catch (e2) {}
+      return fn(payloadB);
+    }
+    if (typeof ai.txt2speech === 'function') return tryMethod(ai.txt2speech.bind(ai));
+    if (typeof ai.text2speech === 'function') return tryMethod(ai.text2speech.bind(ai));
+    if (typeof ai.tts === 'function') return tryMethod(ai.tts.bind(ai));
     throw new Error('PUTER_TTS_UNAVAILABLE');
   }
 

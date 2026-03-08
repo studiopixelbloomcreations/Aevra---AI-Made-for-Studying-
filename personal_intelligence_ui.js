@@ -502,6 +502,58 @@
     return { provider: "openai", model: "gpt-4o-mini-tts", voice: "alloy" };
   }
 
+  function normalizePuterTtsSource(result) {
+    const seen = new Set();
+    function walk(node) {
+      if (!node) return null;
+      if (typeof node === "string") {
+        const s = node.trim();
+        if (/^(blob:|data:audio|https?:\/\/)/i.test(s)) return { src: s, revoke: false };
+        return null;
+      }
+      if (node instanceof Blob) return { src: URL.createObjectURL(node), revoke: true };
+      if (typeof HTMLAudioElement !== "undefined" && node instanceof HTMLAudioElement && node.src) {
+        return { src: String(node.src), revoke: false };
+      }
+      if (typeof node !== "object") return null;
+      if (seen.has(node)) return null;
+      seen.add(node);
+      const directKeys = ["url", "audio_url", "src", "href", "download_url"];
+      for (let i = 0; i < directKeys.length; i += 1) {
+        const k = directKeys[i];
+        if (typeof node[k] === "string" && node[k].trim()) {
+          const s = node[k].trim();
+          if (/^(blob:|data:audio|https?:\/\/)/i.test(s)) return { src: s, revoke: false };
+        }
+      }
+      if (typeof node.data === "string" && /^data:audio/i.test(node.data)) return { src: node.data, revoke: false };
+      const nestedKeys = ["audio", "data", "result", "output", "message", "content"];
+      for (let i = 0; i < nestedKeys.length; i += 1) {
+        const found = walk(node[nestedKeys[i]]);
+        if (found) return found;
+      }
+      return null;
+    }
+    return walk(result);
+  }
+
+  async function requestPuterTts(text, voiceOptions) {
+    await ensurePuterReady(false);
+    const ai = window.puter && window.puter.ai;
+    if (!ai) throw new Error("PUTER_NOT_LOADED");
+    const payloadA = Object.assign({ text: String(text || "") }, voiceOptions || {});
+    const payloadB = Object.assign({ input: String(text || "") }, voiceOptions || {});
+    async function tryMethod(fn) {
+      try { return await fn(String(text || ""), voiceOptions || {}); } catch (e1) {}
+      try { return await fn(payloadA); } catch (e2) {}
+      return fn(payloadB);
+    }
+    if (typeof ai.txt2speech === "function") return tryMethod(ai.txt2speech.bind(ai));
+    if (typeof ai.text2speech === "function") return tryMethod(ai.text2speech.bind(ai));
+    if (typeof ai.tts === "function") return tryMethod(ai.tts.bind(ai));
+    throw new Error("PUTER_TTS_UNAVAILABLE");
+  }
+
   async function ensurePuterReady(interactive) {
     if (!window.puter || !window.puter.ai) throw new Error("PUTER_NOT_LOADED");
     if (!window.puter.auth || !window.puter.auth.isSignedIn || !window.puter.auth.signIn) return;
@@ -1252,34 +1304,13 @@
     try {
       await primeAudioPlayback();
       const cleanedText = String(text || "").replace(/\s+/g, " ").trim();
-      await ensurePuterReady(false);
       const voiceOptions = getSelectedPuterVoiceOptions();
-      const ai = window.puter && window.puter.ai;
-      if (!ai) throw new Error("PUTER_NOT_LOADED");
-      let out = null;
-      if (typeof ai.txt2speech === "function") out = await ai.txt2speech(cleanedText, voiceOptions);
-      else if (typeof ai.text2speech === "function") out = await ai.text2speech(cleanedText, voiceOptions);
-      else if (typeof ai.tts === "function") out = await ai.tts(cleanedText, voiceOptions);
-      else throw new Error("PUTER_TTS_UNAVAILABLE");
-
-      let url = "";
-      let revokeUrl = false;
-      if (typeof out === "string") {
-        url = out;
-      } else if (out instanceof Blob) {
-        url = URL.createObjectURL(out);
-        revokeUrl = true;
-      } else if (out && typeof out === "object" && typeof out.url === "string") {
-        url = String(out.url);
-      } else if (out && typeof out === "object" && typeof out.audio_url === "string") {
-        url = String(out.audio_url);
-      } else if (out && typeof out === "object" && out.audio instanceof Blob) {
-        url = URL.createObjectURL(out.audio);
-        revokeUrl = true;
-      }
-      if (!url) throw new Error("PUTER_EMPTY_AUDIO");
+      const out = await requestPuterTts(cleanedText, voiceOptions);
+      const normalized = normalizePuterTtsSource(out);
+      if (!normalized || !normalized.src) throw new Error("PUTER_EMPTY_AUDIO");
+      const url = normalized.src;
       tutorAudio = new Audio(url);
-      tutorAudio.__revoke = revokeUrl;
+      tutorAudio.__revoke = !!normalized.revoke;
       tutorAudio.preload = "auto";
       tutorAudio.playsInline = true;
       stopSpeakerAnalyser();
