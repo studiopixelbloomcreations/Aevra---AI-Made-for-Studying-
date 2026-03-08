@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const TOKEN_KEY = 'g9_token';
   const TOKEN_EXP_KEY = 'g9_token_exp';
   const LOGIN_RETURN_KEY = 'g9_login_return_target';
+  const LOGIN_FLOW_KEY = 'g9_login_flow_started';
 
   function sanitizeReturnTarget(target) {
     const raw = String(target || '').trim();
@@ -33,6 +34,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       localStorage.setItem(LOGIN_RETURN_KEY, getReturnTarget());
     } catch (e) {}
+  }
+
+  function markLoginFlowStarted() {
+    try { localStorage.setItem(LOGIN_FLOW_KEY, '1'); } catch (e) {}
+  }
+
+  function consumeLoginFlowStarted() {
+    try {
+      const v = localStorage.getItem(LOGIN_FLOW_KEY) === '1';
+      localStorage.removeItem(LOGIN_FLOW_KEY);
+      return v;
+    } catch (e) {
+      return false;
+    }
   }
 
   function clearReturnTarget() {
@@ -110,7 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await ensurePersistence();
       const res = await auth.getRedirectResult();
-      if (res && res.user) {
+      const flowStarted = consumeLoginFlowStarted();
+      if (res && res.user && flowStarted) {
         await completeSignIn(res.user, 'Signed in - redirecting...');
       }
     } catch (err) {
@@ -132,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       await ensurePersistence();
+      markLoginFlowStarted();
       const cred = await auth.signInWithEmailAndPassword(email, pass);
       const ok = await completeSignIn(cred && cred.user, 'Signed in - redirecting...');
       if (!ok) showToast('Unable to sign in. Please try again.');
@@ -160,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await ensurePersistence();
         persistReturnTarget();
+        markLoginFlowStarted();
 
         const provider = new firebase.auth.GoogleAuthProvider();
         provider.addScope('email');
@@ -188,13 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
   auth.onAuthStateChanged(async (user) => {
     if (user) {
       console.log('User signed in:', user.email || user.displayName);
-      try {
-        const onLoginPage = /\/login\.html$/i.test(window.location.pathname || '');
-        if (onLoginPage) {
-          const stored = await storeTokenFromUser(user);
-          if (stored) redirectToAppTarget(500);
-        }
-      } catch (e) {}
     } else {
       console.log('No user signed in');
     }
