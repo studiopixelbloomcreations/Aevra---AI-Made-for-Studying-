@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "file_kind": "Fact Schema",
-  "updated_at": "2026-03-08T10:03:00.145Z",
+  "updated_at": "2026-03-08T10:08:13.642Z",
   "categories": {
     "identity": [
       "name",
@@ -145,7 +145,8 @@
     ],
     "custom": [
       "number_of_best_friends",
-      "second_best_friend_name"
+      "second_best_friend_name",
+      "third_best_friend"
     ]
   },
   "aliases": {
