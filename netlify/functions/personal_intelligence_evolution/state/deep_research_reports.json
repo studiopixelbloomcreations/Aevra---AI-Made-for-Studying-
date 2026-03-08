@@ -31,6 +31,38 @@
           "source_type": "catalog"
         }
       ]
+    },
+    {
+      "id": "research_mmi2ow4y",
+      "at": "2026-03-08T18:15:33.298Z",
+      "query": "research methodology for 12 weeks research in ICT exam strategy for milestone create a study plan and compare two approaches generator skill building work profile algorithms",
+      "stages": [
+        "collect_sources",
+        "rank_sources",
+        "synthesize_findings",
+        "emit_citations"
+      ],
+      "summary": "Deep research report generated with ranked sources and citations.",
+      "citations": [
+        {
+          "title": "GeeksforGeeks",
+          "url": "https://www.geeksforgeeks.org",
+          "score": 4,
+          "source_type": "catalog"
+        },
+        {
+          "title": "National Institute of Education Sri Lanka",
+          "url": "https://nie.lk",
+          "score": 3,
+          "source_type": "catalog"
+        },
+        {
+          "title": "Sri Lanka Ministry of Education",
+          "url": "https://moe.gov.lk",
+          "score": 2,
+          "source_type": "catalog"
+        }
+      ]
     }
   ]
 }
