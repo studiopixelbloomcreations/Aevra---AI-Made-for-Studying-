@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "file_kind": "Fact Evolution",
-  "updated_at": "2026-03-08T06:54:42.535Z",
+  "updated_at": "2026-03-08T07:06:35.964Z",
   "users": {
     "guest@student.com": {
       "user_id": "guest@student.com",
       "latest_facts": {
         "name": "T H E N U J A.",
         "school": "Saint Anne's College. Got that",
-        "fact_favorite_subject": "ICT."
+        "fact_favorite_subject": "ICT",
+        "fact_favorite_learning_language": "Python."
       },
       "fact_events": [
         {
@@ -20,9 +21,18 @@
             "school": "Saint Anne's College. Got that",
             "fact_favorite_subject": "ICT."
           }
+        },
+        {
+          "id": "fact_evt_mmheslz0_f7jv1i",
+          "at": "2026-03-08T07:06:35.964Z",
+          "message": "Alright, so my favorite learning language is Python.",
+          "updates": {
+            "fact_favorite_subject": "ICT",
+            "fact_favorite_learning_language": "Python."
+          }
         }
       ],
-      "updated_at": "2026-03-08T06:54:42.535Z"
+      "updated_at": "2026-03-08T07:06:35.964Z"
     }
   }
 }
