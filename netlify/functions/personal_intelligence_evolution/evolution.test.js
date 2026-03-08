@@ -5,6 +5,8 @@ const { buildMemorySnapshot } = require("./memory_facade");
 const { initRegistries } = require("./tool_registry");
 const { SandboxRunner } = require("./sandbox_runner");
 const { EvolutionEngine } = require("./evolution_engine");
+const { CloudStateStore } = require("./cloud_state_store");
+const { SwarmTaskQueue } = require("./swarm_task_queue");
 
 async function testMemoryFacade() {
   const snapshot = buildMemorySnapshot(
@@ -88,10 +90,37 @@ async function testEndToEndEvolutionCycle() {
 
     assert(out.evolution_status);
     assert(out.active_module_versions);
+    assert(out.phases_3_to_9_status);
     if (out.proposal_trace_id) observedTrace = out.proposal_trace_id;
   }
 
   assert(observedTrace.length > 0, "expected at least one proposal trace id");
+}
+
+async function testQueueDeadLetterBehavior() {
+  const store = new CloudStateStore();
+  const queue = new SwarmTaskQueue(store);
+
+  const enq = await queue.enqueueFromInteraction({
+    message: "research this deeply and compare options",
+    known_facts: { name: "Test User" },
+  });
+  assert.strictEqual(enq.ok, true);
+  assert.strictEqual(enq.enqueued, true);
+
+  const loaded = await queue.load();
+  assert.strictEqual(loaded.ok, true);
+  const task = loaded.queue.tasks.find((t) => t && t.id === enq.task_id);
+  assert(task, "expected enqueued task to exist");
+  task.max_retries = 0;
+  const saved = await queue.save(loaded.queue, loaded.sha);
+  assert.strictEqual(saved.ok, true);
+
+  const processed = await queue.processPending(async () => {
+    throw new Error("forced failure");
+  }, 1, { backoff_base_ms: 1000 });
+  assert.strictEqual(processed.ok, true);
+  assert.strictEqual(processed.dead_lettered_count >= 1, true);
 }
 
 async function run() {
@@ -99,6 +128,7 @@ async function run() {
   await testSafetyRestrictions();
   await testSandboxRejectInvalidPatch();
   await testEndToEndEvolutionCycle();
+  await testQueueDeadLetterBehavior();
   console.log("evolution tests: ok");
 }
 

@@ -1,5 +1,8 @@
 const { EvolutionEngine } = require("./personal_intelligence_evolution/evolution_engine");
 const { autoEvolveToGitHub } = require("./personal_intelligence_evolution/cloud_deployer");
+const { CloudStateStore } = require("./personal_intelligence_evolution/cloud_state_store");
+const { appendObservabilityEvent } = require("./personal_intelligence_evolution/observability");
+const { enforceRateLimit } = require("./personal_intelligence_evolution/security_ops");
 
 function json(statusCode, obj) {
   return {
@@ -295,6 +298,10 @@ async function puterChatReplyFromPayload(message, payload) {
 exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+  const rate = enforceRateLimit(event, "ask", Number(process.env.PI_ASK_RATE_LIMIT_PER_MIN || 90), 60000);
+  if (!rate.allowed) {
+    return json(429, { error: "Rate limit exceeded", rate_limit: rate });
+  }
 
   let payload = {};
   try {
@@ -329,6 +336,7 @@ exports.handler = async function handler(event) {
   const aiOk = cloudEvolveOnly ? true : (action ? true : !!llm.ok);
   const aiError = cloudEvolveOnly ? "" : (action ? "" : String(llm.error || ""));
   const latencyMs = Math.max(0, Date.now() - startedAt);
+  const runtimeMode = String(process.env.PI_RUNTIME_MODE || "cloud_only").trim().toLowerCase();
 
   let evolutionMeta = null;
   try {
@@ -349,6 +357,7 @@ exports.handler = async function handler(event) {
       known_facts: mergedKnownFacts,
       profile: payload && payload.profile,
       current_task: action && action.type ? String(action.type) : "conversation",
+      runtime_mode: runtimeMode,
     });
   } catch (e) {
     evolutionMeta = null;
@@ -378,6 +387,19 @@ exports.handler = async function handler(event) {
     };
   }
 
+  try {
+    const store = new CloudStateStore();
+    await appendObservabilityEvent(store, "ask_response", {
+      ai_provider: aiProvider,
+      ai_ok: aiOk,
+      latency_ms: latencyMs,
+      action_type: action && action.type ? String(action.type) : "",
+      evolution: evolutionMeta && evolutionMeta.evolution_status ? true : false,
+      phase2: evolutionMeta && evolutionMeta.phase2_status ? true : false,
+      phase3to9: evolutionMeta && evolutionMeta.phases_3_to_9_status ? true : false,
+    });
+  } catch (e) {}
+
   return json(200, {
     answer,
     speak_text: speakText,
@@ -397,6 +419,10 @@ exports.handler = async function handler(event) {
     evolution_status: evolutionMeta && evolutionMeta.evolution_status ? evolutionMeta.evolution_status : undefined,
     active_module_versions: evolutionMeta && evolutionMeta.active_module_versions ? evolutionMeta.active_module_versions : undefined,
     proposal_trace_id: evolutionMeta && evolutionMeta.proposal_trace_id ? evolutionMeta.proposal_trace_id : undefined,
+    pi_os_status: evolutionMeta && evolutionMeta.pi_os_status ? evolutionMeta.pi_os_status : undefined,
+    phase2_status: evolutionMeta && evolutionMeta.phase2_status ? evolutionMeta.phase2_status : undefined,
+    phases_3_to_9_status: evolutionMeta && evolutionMeta.phases_3_to_9_status ? evolutionMeta.phases_3_to_9_status : undefined,
+    runtime_mode: runtimeMode,
     cloud_evolution: cloudEvolution || undefined,
   });
 };

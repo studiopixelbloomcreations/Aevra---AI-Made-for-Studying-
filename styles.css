@@ -4816,6 +4816,51 @@ body {
   text-shadow: 0 0 18px rgba(180, 210, 255, 0.28);
 }
 
+.pi-evolution-board {
+  width: min(940px, 92vw);
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: rgba(7, 17, 36, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+.pi-evolution-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(220, 233, 255, 0.8);
+  margin-bottom: 8px;
+}
+
+.pi-evolution-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.pi-evolution-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pi-evolution-item span {
+  font-size: 11px;
+  color: rgba(225, 236, 255, 0.84);
+}
+
+.pi-evolution-item strong {
+  font-size: 12px;
+  color: #f8fbff;
+}
+
 .pi-log {
   margin-top: 10px;
   max-height: 24vh;
@@ -5006,6 +5051,9 @@ body {
   .pi-orb {
     width: 144px;
     height: 144px;
+  }
+  .pi-evolution-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
 

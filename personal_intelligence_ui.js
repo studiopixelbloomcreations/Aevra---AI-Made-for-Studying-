@@ -76,6 +76,17 @@
         <span class="pi-orb-glint"></span>
       </button>
       <div class="pi-state">Idle</div>
+      <div class="pi-evolution-board" aria-live="polite">
+        <div class="pi-evolution-title">Cloud Evolution</div>
+        <div class="pi-evolution-grid">
+          <div class="pi-evolution-item"><span>Runtime</span><strong data-pi-field="runtime">-</strong></div>
+          <div class="pi-evolution-item"><span>Graph</span><strong data-pi-field="graph">-</strong></div>
+          <div class="pi-evolution-item"><span>Queue</span><strong data-pi-field="queue">-</strong></div>
+          <div class="pi-evolution-item"><span>Research</span><strong data-pi-field="research">-</strong></div>
+          <div class="pi-evolution-item"><span>Retries</span><strong data-pi-field="retries">0</strong></div>
+          <div class="pi-evolution-item"><span>Dead-Letter</span><strong data-pi-field="dead">0</strong></div>
+        </div>
+      </div>
     </div>
     <div class="pi-log" aria-live="polite"></div>
     <input class="pi-hidden-file-input" type="file" multiple style="display:none" />
@@ -88,6 +99,14 @@
   const stateEl = panel.querySelector(".pi-state");
   const logEl = panel.querySelector(".pi-log");
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
+  const evoFields = {
+    runtime: panel.querySelector('[data-pi-field="runtime"]'),
+    graph: panel.querySelector('[data-pi-field="graph"]'),
+    queue: panel.querySelector('[data-pi-field="queue"]'),
+    research: panel.querySelector('[data-pi-field="research"]'),
+    retries: panel.querySelector('[data-pi-field="retries"]'),
+    dead: panel.querySelector('[data-pi-field="dead"]'),
+  };
 
   function dbg() {
     try {
@@ -103,6 +122,34 @@
     row.textContent = text;
     logEl.appendChild(row);
     logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  renderEvolutionStatus({});
+
+  function setEvoField(field, value) {
+    const el = evoFields[field];
+    if (!el) return;
+    el.textContent = String(value || "-");
+  }
+
+  function renderEvolutionStatus(data) {
+    const src = data && typeof data === "object" ? data : {};
+    const phase2 = src.phase2_status && typeof src.phase2_status === "object" ? src.phase2_status : {};
+    const phase3to9 = src.phases_3_to_9_status && typeof src.phases_3_to_9_status === "object" ? src.phases_3_to_9_status : {};
+    const queue = phase2.queue && typeof phase2.queue === "object" ? phase2.queue : {};
+    const graph = phase2.graph && typeof phase2.graph === "object" ? phase2.graph : {};
+    const research = phase2.research_pipeline && typeof phase2.research_pipeline === "object" ? phase2.research_pipeline : {};
+    const phase3 = phase3to9.phase3_distributed_swarm && typeof phase3to9.phase3_distributed_swarm === "object" ? phase3to9.phase3_distributed_swarm : {};
+    const phase4 = phase3to9.phase4_deep_research && typeof phase3to9.phase4_deep_research === "object" ? phase3to9.phase4_deep_research : {};
+    const phase9 = phase3to9.phase9_governed_rollout && typeof phase3to9.phase9_governed_rollout === "object" ? phase3to9.phase9_governed_rollout : {};
+    const runtimeMode = String(src.runtime_mode || (src.pi_os_status && src.pi_os_status.runtime && src.pi_os_status.runtime.mode) || "-");
+
+    setEvoField("runtime", runtimeMode || "-");
+    setEvoField("graph", graph.ok ? (String(graph.node_count || 0) + "n/" + String(graph.edge_count || 0) + "e") : "error");
+    setEvoField("queue", String(queue.pending_count || 0) + " pending / " + String(phase3.worker_count || 0) + "w");
+    setEvoField("research", (phase4.triggered ? "deep" : (research.status || "-")) + " / " + String(phase9.rollout_mode || "na"));
+    setEvoField("retries", String(queue.retried_count || 0));
+    setEvoField("dead", String(queue.dead_letter_count || 0));
   }
 
   function loadMemory() {
@@ -1170,6 +1217,56 @@
     }
   }
 
+  async function inferModelMemoryFactsWithPuter(userText, assistantAnswer, updates) {
+    try {
+      await ensurePuterReady(false);
+      const model = getPIModel();
+      const prompt = [
+        "You are a memory extractor.",
+        "List only user-profile facts you already remember or can confidently infer from conversation context.",
+        "Return strict JSON only in this format:",
+        "{\"facts\": [{\"key\":\"favorite_subject\",\"value\":\"ICT\",\"confidence\":0.0}]}",
+        "Rules:",
+        "- confidence must be 0..1",
+        "- include only confidence >= 0.85",
+        "- never invent uncertain facts",
+        "- prefer stable profile facts (name, school, city, preferences, friends, goals, habits)",
+        "- if no reliable facts, return {\"facts\":[]}",
+        "Latest user message:",
+        String(userText || "").slice(0, 900),
+        "Latest assistant answer:",
+        String(assistantAnswer || "").slice(0, 900),
+        "Current known facts:",
+        JSON.stringify(knownFacts || {}).slice(0, 2400),
+        "Current extracted facts:",
+        JSON.stringify(updates || {}).slice(0, 1200),
+      ].join("\n");
+      const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
+      const raw = String(extractPuterText(resp) || "").trim();
+      const s = raw.indexOf("{");
+      const e = raw.lastIndexOf("}");
+      if (s < 0 || e <= s) return {};
+      const parsed = JSON.parse(raw.slice(s, e + 1));
+      const rows = Array.isArray(parsed && parsed.facts) ? parsed.facts : [];
+      const out = {};
+      rows.forEach(function (r) {
+        const keyRaw = String(r && r.key ? r.key : "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_+|_+$/g, "");
+        const val = String(r && r.value ? r.value : "").trim();
+        const conf = Number(r && r.confidence);
+        if (!keyRaw || !val) return;
+        if (!Number.isFinite(conf) || conf < 0.85) return;
+        const key = /^(name|school|city|country|grade|preferred_language|favorite_subject|favorite_color|favorite_sport|hobbies|goal|best_friend_name)$/.test(keyRaw)
+          ? keyRaw
+          : (keyRaw.startsWith("fact_") ? keyRaw : ("fact_" + keyRaw));
+        out[key.slice(0, 64)] = val.slice(0, 180);
+      });
+      return out;
+    } catch (e) {
+      dbg("puter model-memory inference failed", e && e.message);
+      return {};
+    }
+  }
+
   async function sendCloudEvolutionFromPuter(userText, puterAnswer, generatedCodeFromCaller, updatesFromCaller) {
     try {
       const updates = updatesFromCaller && typeof updatesFromCaller === "object"
@@ -1199,10 +1296,12 @@
           puter_generated_code: generatedCode,
           puter_model: getPIModel(),
           schema_candidates: toSchemaCandidatesFromUpdates(updates),
+          memory_updates: updates && typeof updates === "object" ? updates : {},
           memory_context: buildLongTermMemoryContext(),
         }),
       });
       dbg("cloud evolution sync", data && data.cloud_evolution ? data.cloud_evolution : data);
+      renderEvolutionStatus(data);
     } catch (e) {
       dbg("cloud evolution sync failed", e && e.message);
     }
@@ -1216,6 +1315,8 @@
 
   async function sendLocalEvolutionFromPuter(userText, generatedCode, updates) {
     try {
+      const localEvolutionEnabled = String(localStorage.getItem("pi_local_evolution_enabled") || "false").trim().toLowerCase() === "true";
+      if (!localEvolutionEnabled) return;
       if (!window.DesktopAssistant || !window.DesktopAssistant.startEvolution) return;
       if (!shouldTriggerCloudEvolution(userText, updates)) return;
       const now = Date.now();
@@ -1286,7 +1387,8 @@
     try {
       let updates = detectMemoryUpdatesLocal(userText);
       const inferred = await inferAdditionalFactsWithPuter(userText, updates);
-      updates = Object.assign({}, updates, inferred);
+      const memorySnapshot = await inferModelMemoryFactsWithPuter(userText, puterAnswer, Object.assign({}, updates, inferred));
+      updates = Object.assign({}, updates, inferred, memorySnapshot);
       if (!shouldTriggerCloudEvolution(userText, updates)) return;
       const language = localStorage.getItem("g9_language") || "English";
       const subject = localStorage.getItem("g9_subject") || "General";
@@ -1384,6 +1486,7 @@
         if (actionData && actionData.learned_facts) mergeKnownFacts(actionData.learned_facts);
         if (actionData && actionData.memory_updates) mergeKnownFacts(actionData.memory_updates);
         if (actionData && actionData.action) executeAssistantAction(actionData.action);
+        renderEvolutionStatus(actionData);
         dbg("AI provider:", "local_action", "ok:", true);
         await playTutorTTS(actionSpeakText);
         return;
@@ -1431,6 +1534,7 @@
         if (data && data.learned_facts) mergeKnownFacts(data.learned_facts);
         if (data && data.memory_updates) mergeKnownFacts(data.memory_updates);
         if (data && data.action) executeAssistantAction(data.action);
+        renderEvolutionStatus(data);
         await playTutorTTS(speakText);
       } catch (e2) {
         addLog("assistant", "Tutor: Request failed. Please try again.");

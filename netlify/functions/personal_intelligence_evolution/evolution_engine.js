@@ -14,6 +14,9 @@ const { SandboxRunner } = require("./sandbox_runner");
 const { DeploymentManager } = require("./deployment_manager");
 const { PersonalizationScorer } = require("./personalization_scorer");
 const { getModelConfig } = require("./model_router");
+const { runPIOsCycle } = require("./pi_os_controller");
+const { runPhase2Cycle } = require("./phase2_orchestrator");
+const { runPhases3To9 } = require("./phases_3_to_9_orchestrator");
 
 const runtimeState = {
   boot_at: nowIso(),
@@ -86,6 +89,7 @@ async function runEvolutionCycle(envelope, memorySnapshot) {
   if (!weaknesses.length) {
     return {
       triggered: false,
+      weaknesses: [],
       analysis_summary: analysis.summary,
       analysis_model: analysis.model_used || "none",
       proposal_id: "",
@@ -118,6 +122,7 @@ async function runEvolutionCycle(envelope, memorySnapshot) {
 
   return {
     triggered: true,
+    weaknesses,
     analysis_summary: analysis.summary,
     analysis_model: analysis.model_used || "none",
     proposal_id: proposal.id,
@@ -153,6 +158,9 @@ const EvolutionEngine = {
 
     const personalization = PersonalizationScorer.score(memorySnapshot);
     const evolution = await runEvolutionCycle(envelope, memorySnapshot);
+    const piOs = runPIOsCycle(runtimeState, envelope, memorySnapshot, evolution.weaknesses || []);
+    const phase2 = await runPhase2Cycle(envelope);
+    const phases3to9 = await runPhases3To9(envelope, memorySnapshot, phase2);
 
     return {
       evolution_status: {
@@ -176,6 +184,9 @@ const EvolutionEngine = {
       active_module_versions: listActiveVersions(runtimeState.registries),
       proposal_trace_id: evolution.proposal_trace_id || "",
       memory_snapshot: memorySnapshot,
+      pi_os_status: piOs,
+      phase2_status: phase2,
+      phases_3_to_9_status: phases3to9,
     };
   },
 };
