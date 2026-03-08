@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "file_kind": "Fact Evolution",
-  "updated_at": "2026-03-08T10:02:59.650Z",
+  "updated_at": "2026-03-08T10:08:13.153Z",
   "users": {
     "guest@student.com": {
       "user_id": "guest@student.com",
@@ -10,7 +10,8 @@
         "school": "Saint Anne's College. Got that",
         "fact_favorite_subject": "ICT",
         "fact_favorite_learning_language": "Python",
-        "best_friend_name": "B A V I N D U got that"
+        "best_friend_name": "B A V I N D U got that",
+        "fact_third_best_friend": "M A T H A"
       },
       "fact_events": [
         {
@@ -46,9 +47,17 @@
           "updates": {
             "best_friend_name": "B A V I N D U got that"
           }
+        },
+        {
+          "id": "fact_evt_mmhla6ap_y4b1xb",
+          "at": "2026-03-08T10:08:13.153Z",
+          "message": "So my third best friend is M A T H A",
+          "updates": {
+            "fact_third_best_friend": "M A T H A"
+          }
         }
       ],
-      "updated_at": "2026-03-08T10:02:59.650Z"
+      "updated_at": "2026-03-08T10:08:13.153Z"
     }
   }
 }
