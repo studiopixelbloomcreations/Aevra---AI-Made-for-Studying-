@@ -1001,21 +1001,43 @@
   }
 
   async function generatePuterEvolutionCode(userText, language, subject) {
-    await ensurePuterReady(false);
-    const model = getPIModel();
-    const prompt = [
-      "Generate safe JavaScript module code only.",
-      "No shell/system commands. No process env mutation.",
-      "Required export: module.exports = { id, describe, run }",
-      `Language: ${String(language || "English")}`,
-      `Subject: ${String(subject || "General")}`,
-      "User message:",
-      String(userText || "").slice(0, 900),
-      "Known facts:",
-      JSON.stringify(knownFacts || {}).slice(0, 2200),
+    try {
+      await ensurePuterReady(false);
+      const model = getPIModel();
+      const prompt = [
+        "Generate safe JavaScript module code only.",
+        "No shell/system commands. No process env mutation.",
+        "Required export: module.exports = { id, describe, run }",
+        `Language: ${String(language || "English")}`,
+        `Subject: ${String(subject || "General")}`,
+        "User message:",
+        String(userText || "").slice(0, 900),
+        "Known facts:",
+        JSON.stringify(knownFacts || {}).slice(0, 2200),
+      ].join("\n");
+      const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
+      return String(extractPuterText(resp) || "").trim();
+    } catch (e) {
+      dbg("puter code generation failed, using fallback", e && e.message);
+      return "";
+    }
+  }
+
+  function buildFallbackEvolutionCode(userText, updates) {
+    const safeMsg = String(userText || "").replace(/\\/g, "\\\\").replace(/`/g, "\\`").slice(0, 240);
+    const safeUpdates = JSON.stringify(updates && typeof updates === "object" ? updates : {}).slice(0, 700);
+    return [
+      "module.exports = {",
+      "  id: 'pi_local_fallback',",
+      "  describe: function(){ return 'Local fallback evolution module'; },",
+      "  run: function(input){",
+      `    const fromMessage = \`${safeMsg}\`;`,
+      `    const updates = ${safeUpdates};`,
+      "    return { ok: true, source: 'fallback', fromMessage, updates, input: input || {} };",
+      "  }",
+      "};",
+      "",
     ].join("\n");
-    const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
-    return String(extractPuterText(resp) || "").trim();
   }
 
   async function sendCloudEvolutionFromPuter(userText, puterAnswer, generatedCodeFromCaller, updatesFromCaller) {
@@ -1073,17 +1095,24 @@
       autoLocalEvolutionLastSig = sig;
       autoLocalEvolutionLastAt = now;
 
+      const payloadCode = String(generatedCode || "").trim() || buildFallbackEvolutionCode(userText, updates);
       const out = await window.DesktopAssistant.startEvolution({
         file_path: "netlify/functions/personal_intelligence_evolution/generated/live_local_test.js",
         instruction: "Auto-evolve local helper from latest personal info updates while keeping exports safe.",
-        puter_generated_code: String(generatedCode || ""),
+        puter_generated_code: payloadCode,
         puter_model: getPIModel(),
         deploy_local: true,
         deploy_cloud: false,
       });
       dbg("local evolution result", out);
+      if (out && out.ok) {
+        addLog("assistant", "Tutor: Local evolution wrote code to generated/live_local_test.js");
+      } else {
+        addLog("assistant", "Tutor: Local evolution did not write code (" + String((out && (out.error || out.stage)) || "unknown") + ").");
+      }
     } catch (e) {
       dbg("local evolution failed", e && e.message);
+      addLog("assistant", "Tutor: Local evolution failed (" + String((e && e.message) || "unknown") + ").");
     } finally {
       autoLocalEvolutionBusy = false;
     }
