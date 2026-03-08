@@ -55,6 +55,20 @@
         "rollout_mode": "auto_promote",
         "rollout_risk": 0
       }
+    },
+    {
+      "id": "obs_mmi2oyp8_kwbjg",
+      "at": "2026-03-08T18:15:36.620Z",
+      "type": "ask_response",
+      "payload": {
+        "ai_provider": "puter_client",
+        "ai_ok": true,
+        "latency_ms": 1,
+        "action_type": "",
+        "evolution": true,
+        "phase2": true,
+        "phase3to9": true
+      }
     }
   ]
 }
