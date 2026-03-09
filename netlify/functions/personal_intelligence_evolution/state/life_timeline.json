@@ -69,6 +69,16 @@
       "tags": [
         "general"
       ]
+    },
+    {
+      "id": "life_evt_mmitq69m_h9h1u",
+      "at": "2026-03-09T06:52:22.714Z",
+      "message": "alight tell me what is an ai",
+      "success": true,
+      "latency_ms": 0,
+      "tags": [
+        "general"
+      ]
     }
   ]
 }
