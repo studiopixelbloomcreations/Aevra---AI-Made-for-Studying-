@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "id": "life_evt_mmismpv0_wr8wg",
+      "at": "2026-03-09T06:21:41.868Z",
+      "message": "hello",
+      "success": true,
+      "latency_ms": 3,
+      "tags": [
+        "general"
+      ]
+    }
+  ]
+}
