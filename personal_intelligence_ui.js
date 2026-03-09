@@ -117,6 +117,10 @@
   let visCloudLoadInFlight = false;
   let visUseLegacySetupFallback = false;
   let visDebugLogs = [];
+  let visPendingEnrollmentPayload = null;
+  let visTestEl = null;
+  let visVerificationBusy = false;
+  let visVerificationProfile = null;
   let visProfileSaveTimer = null;
   let visSetupState = {
     step: 1,
@@ -200,6 +204,16 @@
         <div class="pi-vis-debug" hidden></div>
       </div>
     </div>
+    <div class="pi-vis-test-backdrop" hidden>
+      <div class="pi-vis-test">
+        <div class="pi-vis-test-title">Visual Intelligence Testing Stage</div>
+        <div class="pi-vis-test-status">Preparing verification...</div>
+        <div class="pi-vis-test-actions">
+          <button type="button" class="pi-vis-btn ghost" data-vis-test="retry">Retry</button>
+          <button type="button" class="pi-vis-btn" data-vis-test="activate" hidden>Activate AI</button>
+        </div>
+      </div>
+    </div>
   `;
   document.body.appendChild(panel);
 
@@ -219,6 +233,7 @@
   visVideoEl = panel.querySelector(".pi-vis-video");
   visCanvasEl = panel.querySelector(".pi-vis-canvas");
   visSetupEl = panel.querySelector(".pi-vis-setup-backdrop");
+  visTestEl = panel.querySelector(".pi-vis-test-backdrop");
   const textInputEl = panel.querySelector(".pi-text-input");
   const textSendBtn = panel.querySelector(".pi-input-send");
   const textMicBtn = panel.querySelector(".pi-input-mic");
@@ -293,6 +308,10 @@
       }
       if (action === "start" || action === "start-scan") {
         try { startVisEnrollment(); } catch (e) { pushVisDebug("start scan failed to launch: " + String((e && e.message) || e)); }
+        return;
+      }
+      if (action === "complete-enrollment") {
+        try { completeVisEnrollmentAndStartTesting(); } catch (e) { pushVisDebug("complete enrollment failed: " + String((e && e.message) || e)); }
       }
     });
     window.addEventListener("error", function (ev) {
@@ -303,6 +322,24 @@
       if (!visSetupOpen) return;
       const reason = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : "unknown";
       pushVisDebug("Promise rejection: " + String(reason));
+    });
+  }
+
+  if (visTestEl) {
+    visTestEl.addEventListener("click", function (ev) {
+      const btn = ev && ev.target && ev.target.closest ? ev.target.closest("[data-vis-test]") : null;
+      if (!btn) return;
+      const action = String(btn.getAttribute("data-vis-test") || "").trim().toLowerCase();
+      if (action === "retry") {
+        if (visVerificationProfile) startVisVerificationStage(visVerificationProfile);
+        return;
+      }
+      if (action === "activate") {
+        if (visVerificationProfile) {
+          closeVisTestStage();
+          switchToVisProfile(visVerificationProfile);
+        }
+      }
     });
   }
 
@@ -363,7 +400,66 @@
 
   function visCanOperateAI() {
     const runtimeSetupOpen = !!(visRuntime && visRuntime.isSetupOpen && visRuntime.isSetupOpen());
-    return !!(enabled && !visOffline && visActiveProfile && !visSetupOpen && !runtimeSetupOpen && !visScanning);
+    const testOpen = !!(visTestEl && !visTestEl.hidden);
+    return !!(enabled && !visOffline && visActiveProfile && !visSetupOpen && !runtimeSetupOpen && !visScanning && !visVerificationBusy && !testOpen);
+  }
+
+  function openVisTestStage(profile) {
+    if (!visTestEl) return;
+    visVerificationProfile = profile || null;
+    visVerificationBusy = true;
+    visTestEl.hidden = false;
+    const statusEl = visTestEl.querySelector(".pi-vis-test-status");
+    const activateBtn = visTestEl.querySelector('[data-vis-test="activate"]');
+    if (statusEl) statusEl.textContent = "Testing stage started. Look at the camera for verification...";
+    if (activateBtn) activateBtn.hidden = true;
+  }
+
+  function closeVisTestStage() {
+    visVerificationBusy = false;
+    if (visTestEl) visTestEl.hidden = true;
+  }
+
+  async function startVisVerificationStage(profile) {
+    if (!profile) return;
+    openVisTestStage(profile);
+    const statusEl = visTestEl ? visTestEl.querySelector(".pi-vis-test-status") : null;
+    const activateBtn = visTestEl ? visTestEl.querySelector('[data-vis-test="activate"]') : null;
+    const targetVector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
+      ? profile.facial_signature.feature_vector
+      : [];
+    if (!targetVector.length) {
+      if (statusEl) statusEl.textContent = "Verification failed: no biometric signature found in profile.";
+      visVerificationBusy = false;
+      return;
+    }
+    let stable = 0;
+    let tries = 0;
+    while (tries < 45) {
+      tries += 1;
+      await new Promise(function (resolve) { setTimeout(resolve, 140); });
+      const faces = await detectFacesFromVideo();
+      const face = faces && faces.length ? faces[0] : buildPseudoCenterFace();
+      if (!face) continue;
+      const probe = extractVisFaceVector(face);
+      if (!probe.length) continue;
+      const score = cosineSimilarity(probe, targetVector);
+      if (statusEl) statusEl.textContent = "Testing recognition... score " + score.toFixed(3);
+      if (score >= Math.max(0.9, VIS_RECOGNITION_THRESHOLD - 0.02)) {
+        stable += 1;
+      } else {
+        stable = 0;
+      }
+      if (stable >= 3) {
+        const uname = String((profile.user_identity && profile.user_identity.username) || "user");
+        if (statusEl) statusEl.textContent = "Verification complete. Recognized user: " + uname;
+        if (activateBtn) activateBtn.hidden = false;
+        visVerificationBusy = false;
+        return;
+      }
+    }
+    if (statusEl) statusEl.textContent = "Verification timeout. Keep face centered and press Retry.";
+    visVerificationBusy = false;
   }
 
   function setVisOfflineState(nextOffline, reason) {
@@ -1390,6 +1486,11 @@
         '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="no" ' + (!visSetupState.infrared ? "checked" : "") + ' /> No - My webcam does not support infrared scanning</label>' +
         '<div class="pi-vis-note">IR mode uses depth cues when available. RGB mode uses high-precision facial geometry and pixel-level feature vectors across multiple frames.</div>' +
         '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="start-scan">Start Scan</button></div>';
+    } else if (visSetupState.step === 5) {
+      body.innerHTML =
+        '<p><strong>Scan completed successfully.</strong></p>' +
+        '<p>Your biometric identity signature is ready.</p>' +
+        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn" data-vis-action="complete-enrollment">Continue</button></div>';
     } else {
       body.innerHTML =
         '<p>Scanning in progress...</p>' +
@@ -1436,10 +1537,46 @@
           }
           if (action === "start-scan") {
             startVisEnrollment();
+            return;
+          }
+          if (action === "complete-enrollment") {
+            completeVisEnrollmentAndStartTesting();
           }
         });
       });
     }
+  }
+
+  async function completeVisEnrollmentAndStartTesting() {
+    const payload = visPendingEnrollmentPayload;
+    if (!payload || !payload.avgVector || !payload.avgVector.length) {
+      pushVisDebug("Enrollment continue clicked without pending payload.");
+      return;
+    }
+    const identityHints = getSignedInIdentityHints();
+    const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
+    const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
+      scan_mode: visSetupState.infrared ? "infrared_assisted" : "high_precision_rgb",
+      frame_count: payload.frameCount || payload.vectorsLength || 0,
+      landmark_snapshots: (payload.landmarks || []).slice(0, 6),
+      feature_vector: payload.avgVector,
+      geometry_data: {
+        dimensions: payload.avgVector.length,
+        extraction: "48x48 grayscale block features + geometry ratios",
+      },
+      created_at: nowIso(),
+    });
+    await saveVisProfileToCloud(profile);
+    visRecognitionIndex.push({
+      profileFile: profile.file_name,
+      username: profile.user_identity.username,
+      vector: payload.avgVector.slice(0, 256),
+      profile: profile,
+    });
+    pushVisDebug("Identity profile file created: " + profile.file_name);
+    visPendingEnrollmentPayload = null;
+    closeVisSetup();
+    await startVisVerificationStage(profile);
   }
 
   async function startVisEnrollment() {
@@ -1494,33 +1631,19 @@
       pushVisDebug("Scan completed with detected face frames: " + String(vectors.length));
     }
     const avgVector = averageVectors(vectors);
-    const identityHints = getSignedInIdentityHints();
-    const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
-    const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
-      scan_mode: visSetupState.infrared ? "infrared_assisted" : "high_precision_rgb",
-      frame_count: vectors.length,
-      landmark_snapshots: landmarks.slice(0, 6),
-      feature_vector: avgVector,
-      geometry_data: {
-        dimensions: avgVector.length,
-        extraction: "48x48 grayscale block features + geometry ratios",
-      },
-      created_at: nowIso(),
-    });
-    await saveVisProfileToCloud(profile);
-    visRecognitionIndex.push({
-      profileFile: profile.file_name,
-      username: profile.user_identity.username,
-      vector: avgVector.slice(0, 256),
-      profile: profile,
-    });
-    closeVisSetup();
-    await switchToVisProfile(profile);
-    addLog("assistant", "Tutor: Visual identity created for " + profile.user_identity.username + ".");
+    visPendingEnrollmentPayload = {
+      avgVector: avgVector,
+      landmarks: landmarks.slice(0, 12),
+      frameCount: vectors.length,
+      vectorsLength: vectors.length,
+    };
+    visSetupState.step = 5;
+    renderVisSetup();
+    pushVisDebug("Scan complete step ready. Click Continue to create file and run testing stage.");
   }
 
   async function processVisFrame() {
-    if (visDetectBusy || !visVideoEl || visSetupOpen || visScanning) return;
+    if (visDetectBusy || !visVideoEl || visSetupOpen || visScanning || visVerificationBusy) return;
     if (!visDetector) return;
     visDetectBusy = true;
     try {
