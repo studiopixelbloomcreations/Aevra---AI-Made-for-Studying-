@@ -9,6 +9,16 @@
       "tags": [
         "general"
       ]
+    },
+    {
+      "id": "life_evt_mmisn9jt_n9b30",
+      "at": "2026-03-09T06:22:07.385Z",
+      "message": "oh hello",
+      "success": true,
+      "latency_ms": 2,
+      "tags": [
+        "general"
+      ]
     }
   ]
 }
