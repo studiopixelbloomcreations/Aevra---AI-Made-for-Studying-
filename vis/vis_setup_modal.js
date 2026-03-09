@@ -36,28 +36,32 @@
       if (!body) return;
       if (state.step === 1) {
         body.innerHTML =
-          '<p>Visual Intelligence uses facial recognition to identify you and load your personalized AI profile.</p>' +
-          '<p>The system will scan your facial structure and generate a secure biometric identity signature.</p>' +
+          '<p><strong>Step 1 of 4: Visual Intelligence Introduction</strong></p>' +
+          '<p>Visual Intelligence Setup uses facial recognition to identify you and load your personalized AI profile.</p>' +
+          '<p>The system will scan your facial features to generate a secure biometric identity signature.</p>' +
           '<label class="pi-vis-field">Username for identity file<input class="pi-vis-input" data-vis="username" type="text" value="' + String(state.username || "") + '" /></label>' +
           '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn" data-vis-action="continue">Continue</button></div>';
       } else if (state.step === 2) {
         body.innerHTML =
-          '<p>User agreement and privacy confirmation:</p>' +
-          '<p>Facial feature data is used only for identity recognition and AI personalization.</p>' +
+          '<p><strong>Step 2 of 4: User Agreement and Privacy Confirmation</strong></p>' +
+          '<p>Facial feature data will only be used for identity recognition and AI personalization.</p>' +
           '<label class="pi-vis-check"><input type="checkbox" data-vis="agree" ' + (state.agreed ? "checked" : "") + ' /> I agree to biometric processing for personalization.</label>' +
           '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="continue" ' + (state.agreed ? "" : "disabled") + '>Continue</button></div>';
       } else if (state.step === 3) {
         body.innerHTML =
+          '<p><strong>Step 3 of 4: Hardware Capability Question</strong></p>' +
           '<p>Does your webcam support infrared facial recognition?</p>' +
           '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="yes" ' + (state.infrared ? "checked" : "") + ' /> Yes - My webcam supports infrared scanning</label>' +
-          '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="no" ' + (!state.infrared ? "checked" : "") + ' /> No - My webcam does not support infrared scanning</label>' +
+          '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="no" ' + (!state.infrared ? "checked" : "") + ' /> No - My webcam does not support infrared scanning (Normal RGB)</label>' +
           '<div class="pi-vis-note">IR mode uses depth cues when available. RGB mode uses high-precision facial geometry and pixel-level feature vectors across multiple frames.</div>' +
-          '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="start">Start Scan</button></div>';
+          '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="start">Begin Face Scan</button></div>';
       } else {
         body.innerHTML =
+          '<p><strong>Step 4 of 4: Biometric Face Scanning</strong></p>' +
           '<p>Scanning in progress...</p>' +
           '<div class="pi-vis-progress"><div class="pi-vis-progress-bar"></div></div>' +
-          '<div class="pi-vis-note">Keep your face centered and rotate slightly for multi-angle capture.</div>';
+          '<div class="pi-vis-note">Keep your face centered and rotate slightly for multi-angle capture.</div>' +
+          '<div class="pi-vis-note">The system is generating your biometric identity signature now.</div>';
       }
       bindEvents();
     }
