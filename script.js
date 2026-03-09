@@ -10,6 +10,8 @@
   const inputBox=document.getElementById('inputBox');
   const sendBtn=document.getElementById('sendBtn');
   const piBrainToggle=document.getElementById('piBrainToggle');
+  const piModeSelect=document.getElementById('piModeSelect');
+  const piModeActiveLabel=document.getElementById('piModeActiveLabel');
   const micBtn=document.getElementById('micBtn');
   const currentSubject=document.getElementById('currentSubject');
   const chatTitle=document.getElementById('chatTitle');
@@ -46,9 +48,11 @@
   let examModePdfLinks = [];
   const MAIN_MODEL_KEY = 'main_model';
   const PI_CHAT_TOGGLE_KEY = 'g9_pi_chat_mode';
+  const PI_CHAT_MODEL_MODE_KEY = 'g9_pi_model_mode';
   const ADMIN_UNLOCK_MS = 15000;
   const MAIN_MODEL_DEFAULT = 'gemini-3-pro-preview';
   const PI_MODEL_DEFAULT = 'gemini-3-pro-preview';
+  const PI_CHAT_MODEL_MODE_DEFAULT = 'pi_dynamic';
   const MAIN_MODEL_OPTIONS_FALLBACK = [
     { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash' },
     { id: 'openai/gpt-5.2-chat', label: 'openai/gpt-5.2-chat' },
@@ -579,6 +583,113 @@
     }
   }
 
+  function getPiModelMode(){
+    try {
+      return String(localStorage.getItem(PI_CHAT_MODEL_MODE_KEY) || PI_CHAT_MODEL_MODE_DEFAULT).trim() || PI_CHAT_MODEL_MODE_DEFAULT;
+    } catch (e) {
+      return PI_CHAT_MODEL_MODE_DEFAULT;
+    }
+  }
+
+  function setPiModelMode(nextMode){
+    const mode = String(nextMode || '').trim() || PI_CHAT_MODEL_MODE_DEFAULT;
+    try { localStorage.setItem(PI_CHAT_MODEL_MODE_KEY, mode); } catch (e) {}
+    if(piModeSelect && piModeSelect.value !== mode){
+      piModeSelect.value = mode;
+    }
+  }
+
+  function getPiModeLabel(mode){
+    const m = String(mode || '').toLowerCase();
+    if(m === 'deep_research') return 'Deep Research';
+    if(m === 'research') return 'Research';
+    if(m === 'agent_swarm') return 'Agent Swarm';
+    if(m === 'all_in_one') return 'All In One';
+    return 'PI Dynamic';
+  }
+
+  function setPiActiveModeLabel(mode){
+    if(!piModeActiveLabel) return;
+    piModeActiveLabel.textContent = 'Mode: ' + getPiModeLabel(mode);
+  }
+
+  function detectPiDynamicMode(userText){
+    const t = String(userText || '').toLowerCase();
+    if(!t) return 'research';
+    if(/\b(compare|consensus|debate|multiple models|multi model|all models|best answer from)\b/.test(t)) return 'agent_swarm';
+    if(/\b(deep|comprehensive|exhaustive|full report|step by step research|long report|whitepaper)\b/.test(t)) return 'deep_research';
+    if(/\b(research|sources|citations|evidence|find info|investigate|analyze)\b/.test(t)) return 'research';
+    return 'all_in_one';
+  }
+
+  function getPiPromptByMode(mode){
+    const m = String(mode || '').toLowerCase();
+    if(m === 'deep_research'){
+      return 'You are Personal Intelligence in Deep Research mode. Produce deep, structured analysis with assumptions, constraints, and actionable steps.';
+    }
+    if(m === 'research'){
+      return 'You are Personal Intelligence in Research mode. Provide concise evidence-oriented analysis, tradeoffs, and practical recommendations.';
+    }
+    if(m === 'agent_swarm'){
+      return 'You are Personal Intelligence in Agent Swarm mode. Fuse multiple model viewpoints into one coherent answer with explicit consensus.';
+    }
+    if(m === 'all_in_one'){
+      return 'You are Personal Intelligence in All In One mode. Combine strategic planning, research, and execution guidance in one response.';
+    }
+    return 'You are Personal Intelligence in PI Dynamic mode. Select the best reasoning style for the request and answer precisely.';
+  }
+
+  async function runPuterChatWithModel(messages, modelId){
+    const model = String(modelId || '').trim();
+    if(!model) return '';
+    try {
+      const resp = await window.puter.ai.chat(messages, { model: model });
+      return extractPuterText(resp);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  async function runAgentSwarmSummary(history, userText){
+    const swarmModels = [
+      'openai/gpt-5.2-chat',
+      'google/gemini-2.5-flash',
+      'anthropic/claude-opus-4-6',
+      'x-ai/grok-4',
+      'meta/llama-3.3-70b-instruct'
+    ];
+    const baseMessages = history.concat([{ role: 'user', content: String(userText || '') }]);
+    const outputs = [];
+    for(let i=0;i<swarmModels.length;i+=1){
+      const modelId = swarmModels[i];
+      const out = await runPuterChatWithModel(baseMessages, modelId);
+      if(out){
+        outputs.push({ model: modelId, answer: out });
+      }
+    }
+    if(!outputs.length){
+      const fallback = await runPuterChatWithModel(baseMessages, getPiModel());
+      if(fallback){
+        outputs.push({ model: getPiModel(), answer: fallback });
+      }
+    }
+    if(!outputs.length){
+      throw new Error('Agent Swarm returned no model responses.');
+    }
+    const synthesizerInput = outputs.map(function(o, idx){
+      return 'Model #' + String(idx + 1) + ' [' + String(o.model) + ']:\n' + String(o.answer);
+    }).join('\n\n');
+    const synthMessages = [
+      { role: 'system', content: 'Synthesize multiple AI model outputs into one high-quality final answer. Keep only the best parts and resolve conflicts.' },
+      { role: 'user', content: 'User request:\n' + String(userText || '') + '\n\nModel outputs:\n' + synthesizerInput }
+    ];
+    const finalAnswer = await runPuterChatWithModel(synthMessages, getPiModel());
+    if(!finalAnswer){
+      return outputs[0].answer;
+    }
+    return finalAnswer;
+  }
+
   function getPiKnownFacts(){
     try {
       const a = JSON.parse(localStorage.getItem('personal_intelligence_memory_v1') || '{}');
@@ -603,6 +714,12 @@
       inputBox.placeholder = state.piChatMode
         ? 'Personal Intelligence mode: ask anything...'
         : 'Ask me anything...';
+    }
+    if(composerEl){
+      composerEl.classList.toggle('pi-mode-active', state.piChatMode);
+    }
+    if(!state.piChatMode){
+      setPiActiveModeLabel(getPiModelMode());
     }
   }
 
@@ -995,28 +1112,46 @@
     if(state.piChatMode){
       let chat=state.chats.find(c=>c.id===state.active); if(!chat){ createChat('New Chat'); chat=state.chats[0]; }
       if(chat.messages.length===0){ const t=await generateTitle(text); chat.title=t; saveChats(); renderChats(); renderActiveChat(); }
-      const langTag = state.language==='Sinhala' ? '[à·ƒà·’à¶‚à·„à¶½]' : '[English]'; chat.messages.push({role:'user',content:langTag+' '+text}); appendMessage('user',langTag+' '+text); saveChats(); inputBox.value=''; if(micBtn) micBtn.classList.remove('hidden'); if(sendBtn) sendBtn.classList.remove('show'); chat.messages.push({role:'ai',content:'Thinkingâ€¦'}); appendMessage('ai','Thinkingâ€¦'); saveChats(); renderChats(); emitProgressEvent('g9:chat_context', { chatId: state.active, subject: state.subject });
+      const langTag = state.language==='Sinhala' ? '[Sinhala]' : '[English]'; chat.messages.push({role:'user',content:langTag+' '+text}); appendMessage('user',langTag+' '+text); saveChats(); inputBox.value=''; if(micBtn) micBtn.classList.remove('hidden'); if(sendBtn) sendBtn.classList.remove('show'); chat.messages.push({role:'ai',content:'Thinking...'}); appendMessage('ai','Thinking...'); saveChats(); renderChats(); emitProgressEvent('g9:chat_context', { chatId: state.active, subject: state.subject });
       emitProgressEvent('g9:user_message', { chatId: state.active, subject: state.subject, text });
 
       const history = (chat && Array.isArray(chat.messages))
         ? chat.messages
-            .filter(m => m && (m.role === 'user' || m.role === 'ai') && m.content && m.content !== 'Thinkingâ€¦')
+            .filter(m => m && (m.role === 'user' || m.role === 'ai') && m.content && m.content !== 'Thinking...')
             .slice(-20)
             .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: String(m.content).slice(0, 1200) }))
         : [];
 
       try{
         await ensurePuterReady(true);
+        const selectedMode = getPiModelMode();
+        const effectiveMode = selectedMode === 'pi_dynamic' ? detectPiDynamicMode(text) : selectedMode;
+        setPiActiveModeLabel(effectiveMode);
         const piModel = getPiModel();
-        const piPrompt =
-          'You are Personal Intelligence, an advanced reasoning assistant. ' +
-          'Be precise, adaptive, and context-aware. Current subject: ' + state.subject + '. ' +
-          'Respond in ' + state.language + '.';
-        const puterResp = await window.puter.ai.chat([{ role: 'system', content: piPrompt }].concat(history), { model: piModel });
-        const puterAnswer = extractPuterText(puterResp);
+        let puterAnswer = '';
+
+        if(effectiveMode === 'agent_swarm'){
+          puterAnswer = await runAgentSwarmSummary(history, text);
+        } else if(effectiveMode === 'all_in_one'){
+          const researchPrompt = [{ role: 'system', content: getPiPromptByMode('research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.' }].concat(history).concat([{ role: 'user', content: text }]);
+          const deepPrompt = [{ role: 'system', content: getPiPromptByMode('deep_research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.' }].concat(history).concat([{ role: 'user', content: text }]);
+          const researchAnswer = await runPuterChatWithModel(researchPrompt, piModel);
+          const deepAnswer = await runPuterChatWithModel(deepPrompt, piModel);
+          const allInOnePrompt = [
+            { role: 'system', content: getPiPromptByMode('all_in_one') },
+            { role: 'user', content: 'User request:\n' + text + '\n\nResearch output:\n' + String(researchAnswer || 'none') + '\n\nDeep research output:\n' + String(deepAnswer || 'none') }
+          ];
+          puterAnswer = await runPuterChatWithModel(allInOnePrompt, piModel);
+        } else {
+          const piPrompt = getPiPromptByMode(effectiveMode) + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.';
+          const puterResp = await window.puter.ai.chat([{ role: 'system', content: piPrompt }].concat(history).concat([{ role: 'user', content: text }]), { model: piModel });
+          puterAnswer = extractPuterText(puterResp);
+        }
+
         if(!puterAnswer){
           throw new Error('Personal Intelligence model returned an empty response.');
         }
+
         const reqBody = {
           message: text,
           email: 'guest@student.com',
@@ -1030,6 +1165,8 @@
             model: piModel
           },
           puter_model: piModel,
+          pi_processing_mode: effectiveMode,
+          pi_requested_mode: selectedMode,
           runtime_mode: 'cloud_only'
         };
         const res = await (window.Api && window.Api.apiFetch
@@ -1045,7 +1182,7 @@
         if(lastAi) lastAi.content=answer; emitProgressEvent('g9:ai_response', { chatId: state.active, subject: state.subject, text: answer });
         renderActiveChat(); saveChats();
       }
-      catch(e){ const msg=(e && e.message) ? ('âš ï¸ ' + String(e.message)) : 'âš ï¸ Personal Intelligence failed to respond.'; const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai'); if(lastAi) lastAi.content=msg; renderActiveChat(); saveChats(); toast(msg,{duration:5000}); }
+      catch(e){ const msg=(e && e.message) ? ('Warning: ' + String(e.message)) : 'Warning: Personal Intelligence failed to respond.'; const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai'); if(lastAi) lastAi.content=msg; renderActiveChat(); saveChats(); toast(msg,{duration:5000}); }
       return;
     }
 
@@ -1169,6 +1306,18 @@
     });
   }
 
+  if(piModeSelect){
+    const initialPiMode = getPiModelMode();
+    piModeSelect.value = initialPiMode;
+    setPiActiveModeLabel(initialPiMode);
+    piModeSelect.addEventListener('change', function(){
+      const mode = String(piModeSelect.value || PI_CHAT_MODEL_MODE_DEFAULT).trim() || PI_CHAT_MODEL_MODE_DEFAULT;
+      setPiModelMode(mode);
+      setPiActiveModeLabel(mode);
+      toast('PI mode set to ' + getPiModeLabel(mode));
+    });
+  }
+
   // Action buttons
   const actionButtons = document.querySelectorAll('.action-button');
   actionButtons.forEach(btn => {
@@ -1272,6 +1421,8 @@
   };
 
   // init
+  setPiModelMode(getPiModelMode());
+  setPiActiveModeLabel(getPiModelMode());
   setPiChatMode(state.piChatMode);
   renderChats(); renderActiveChat(); if(!state.active && state.chats.length===0) createChat('New Chat');
   

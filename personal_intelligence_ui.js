@@ -118,6 +118,7 @@
           </button>
           <div class="pi-state">Idle</div>
         </div>
+        <div class="pi-voice-log pi-log" aria-live="polite"></div>
         <div class="pi-voice-controls">
           <button class="pi-voice-btn" data-vc="mute" type="button">Mute</button>
           <button class="pi-voice-btn" data-vc="end" type="button">End</button>
@@ -137,7 +138,9 @@
   const auraCanvas = panel.querySelector(".pi-aurora-canvas");
   const stateEl = panel.querySelector(".pi-state");
   const topStatusLabelEl = panel.querySelector(".pi-top-label");
-  const logEl = panel.querySelector(".pi-log");
+  const textLogEl = panel.querySelector(".pi-text-mode .pi-log");
+  const voiceLogEl = panel.querySelector(".pi-voice-log");
+  const logEl = voiceLogEl || textLogEl;
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
   const textInputEl = panel.querySelector(".pi-text-input");
   const textSendBtn = panel.querySelector(".pi-input-send");

@@ -2701,6 +2701,36 @@ body {
   box-shadow: 0 0 16px rgba(85, 190, 255, 0.5);
 }
 
+.pi-mode-select {
+  display: none;
+  max-width: 164px;
+  min-width: 136px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(118, 203, 255, 0.35);
+  background: rgba(10, 21, 42, 0.62);
+  color: #d6f2ff;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.pi-mode-active-label {
+  display: none;
+  font-size: 11px;
+  color: #d6f2ff;
+  background: rgba(18, 31, 55, 0.55);
+  border: 1px solid rgba(122, 206, 255, 0.32);
+  border-radius: 999px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.composer.pi-mode-active .pi-mode-select,
+.composer.pi-mode-active .pi-mode-active-label {
+  display: inline-flex;
+  align-items: center;
+}
+
 .composer::before {
   content: '';
   position: absolute;
@@ -5153,7 +5183,16 @@ body {
 }
 
 .pi-voice-mode.active {
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto minmax(120px, 26vh) auto;
+  gap: 10px;
+}
+
+.pi-voice-log {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  max-height: 26vh;
+  overflow: auto;
+  padding: 6px;
 }
 
 .pi-input-bar {
@@ -5370,6 +5409,15 @@ body {
     padding: 10px !important;
     gap: 8px;
     border-radius: 18px;
+  }
+
+  .pi-mode-active-label {
+    display: none !important;
+  }
+
+  .composer.pi-mode-active .pi-mode-select {
+    max-width: 122px;
+    min-width: 112px;
   }
 
   .input {
