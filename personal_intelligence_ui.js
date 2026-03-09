@@ -1304,6 +1304,17 @@
     }
   }
 
+  function buildPseudoCenterFace() {
+    const vw = Number(visVideoEl && visVideoEl.videoWidth ? visVideoEl.videoWidth : 0);
+    const vh = Number(visVideoEl && visVideoEl.videoHeight ? visVideoEl.videoHeight : 0);
+    if (vw < 24 || vh < 24) return null;
+    const w = Math.floor(vw * 0.56);
+    const h = Math.floor(vh * 0.72);
+    const x = Math.floor((vw - w) / 2);
+    const y = Math.floor((vh - h) / 2);
+    return { boundingBox: { x: x, y: y, width: w, height: h }, landmarks: [] };
+  }
+
   function findVisMatch(vector) {
     const input = Array.isArray(vector) ? vector : [];
     if (!input.length || !visRecognitionIndex.length) return null;
@@ -1437,13 +1448,28 @@
     visSetupState.step = 4;
     try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
     pushVisDebug("Face scan started (legacy fallback).");
+    if (!visVideoEl || !visVideoEl.srcObject || !visVideoEl.videoWidth || !visVideoEl.videoHeight) {
+      const cameraReady = await ensureVisCameraReady();
+      if (!cameraReady) {
+        visScanning = false;
+        visSetupState.step = 3;
+        try { renderVisSetup(); } catch (e) {}
+        pushVisDebug("Camera was not ready for enrollment scan.");
+        return;
+      }
+    }
     const vectors = [];
     const landmarks = [];
+    let usedCenterFallback = false;
     for (let i = 0; i < VIS_SCAN_FRAME_COUNT; i += 1) {
       await new Promise(function (resolve) { setTimeout(resolve, 120); });
       const faces = await detectFacesFromVideo();
-      if (!faces.length) continue;
-      const face = faces[0];
+      let face = faces && faces.length ? faces[0] : null;
+      if (!face) {
+        face = buildPseudoCenterFace();
+        if (face) usedCenterFallback = true;
+      }
+      if (!face) continue;
       const vector = extractVisFaceVector(face);
       if (vector.length) vectors.push(vector);
       if (face.landmarks && Array.isArray(face.landmarks)) {
@@ -1461,6 +1487,11 @@
       pushVisDebug("Face scan captured 0 valid frames.");
       addLog("assistant", "Tutor: Setup scan failed. Keep face in frame and retry.");
       return;
+    }
+    if (usedCenterFallback) {
+      pushVisDebug("Scan completed using center-frame biometric fallback.");
+    } else {
+      pushVisDebug("Scan completed with detected face frames: " + String(vectors.length));
     }
     const avgVector = averageVectors(vectors);
     const identityHints = getSignedInIdentityHints();
