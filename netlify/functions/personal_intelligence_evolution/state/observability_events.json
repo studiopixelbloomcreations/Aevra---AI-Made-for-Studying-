@@ -471,6 +471,20 @@
         "research_report_id": "",
         "governance_decision_id": "gov_mmitqgpb"
       }
+    },
+    {
+      "id": "obs_mmitqhzx_88g33",
+      "at": "2026-03-09T06:52:37.917Z",
+      "type": "ask_response",
+      "payload": {
+        "ai_provider": "puter:gemini-3-pro-preview",
+        "ai_ok": true,
+        "latency_ms": 1,
+        "action_type": "",
+        "evolution": true,
+        "phase2": true,
+        "phase3to9": true
+      }
     }
   ]
 }
