@@ -19,6 +19,16 @@
       "tags": [
         "general"
       ]
+    },
+    {
+      "id": "life_evt_mmit2d59_wmqar",
+      "at": "2026-03-09T06:33:51.885Z",
+      "message": "hello",
+      "success": true,
+      "latency_ms": 3,
+      "tags": [
+        "general"
+      ]
     }
   ]
 }
