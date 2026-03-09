@@ -59,6 +59,21 @@
       },
       "citation_count": 0,
       "at": "2026-03-09T06:22:08.938Z"
+    },
+    {
+      "id": "trace_mmit29we",
+      "report_id": "",
+      "query": "hello",
+      "policy": {
+        "timeout_ms": 6000,
+        "max_depth": 2,
+        "budget": 6,
+        "allowlist": [],
+        "denylist": [],
+        "trust_threshold": 0.25
+      },
+      "citation_count": 0,
+      "at": "2026-03-09T06:33:47.678Z"
     }
   ]
 }
