@@ -116,6 +116,7 @@
   let visUserInstance = null;
   let visCloudLoadInFlight = false;
   let visUseLegacySetupFallback = false;
+  let visDebugLogs = [];
   let visProfileSaveTimer = null;
   let visSetupState = {
     step: 1,
@@ -196,6 +197,7 @@
             <button type="button" class="pi-vis-btn" data-vis-action="continue">Continue</button>
           </div>
         </div>
+        <div class="pi-vis-debug" hidden></div>
       </div>
     </div>
   `;
@@ -240,29 +242,67 @@
     if (checkedRadio) visSetupState.infrared = String(checkedRadio.value || "") === "yes";
   }
 
+  function pushVisDebug(line) {
+    const text = "[" + new Date().toLocaleTimeString() + "] " + String(line || "");
+    visDebugLogs.push(text);
+    if (visDebugLogs.length > 14) visDebugLogs = visDebugLogs.slice(-14);
+    if (!visSetupEl) return;
+    const debugEl = visSetupEl.querySelector(".pi-vis-debug");
+    if (!debugEl) return;
+    debugEl.hidden = false;
+    debugEl.innerHTML = visDebugLogs.map(function (row) {
+      return "<div>" + row.replace(/[<>&]/g, function (ch) {
+        return ch === "<" ? "&lt;" : (ch === ">" ? "&gt;" : "&amp;");
+      }) + "</div>";
+    }).join("");
+  }
+
+  function shouldAutoEnableLegacySetupFromPlaceholder() {
+    if (!visSetupEl) return false;
+    const body = visSetupEl.querySelector(".pi-vis-setup-body");
+    if (!body) return false;
+    const txt = String(body.textContent || "").toLowerCase();
+    return txt.includes("preparing your enrollment flow");
+  }
+
   // Fail-safe delegated setup controls for legacy fallback flow only.
   if (visSetupEl) {
     visSetupEl.addEventListener("click", function (ev) {
-      if (!visUseLegacySetupFallback) return;
+      if (!visUseLegacySetupFallback) {
+        if (!shouldAutoEnableLegacySetupFromPlaceholder()) return;
+        visUseLegacySetupFallback = true;
+        pushVisDebug("Auto-enabled legacy setup fallback from placeholder state.");
+        try { renderVisSetup(); } catch (e) { pushVisDebug("renderVisSetup failed: " + String((e && e.message) || e)); }
+      }
       const btn = ev && ev.target && ev.target.closest ? ev.target.closest("[data-vis-action]") : null;
       if (!btn) return;
       const action = String(btn.getAttribute("data-vis-action") || "").trim().toLowerCase();
       if (!action) return;
+      pushVisDebug("Setup action: " + action + " (step " + String(visSetupState.step || 1) + ")");
       syncVisSetupStateFromDom();
       if (action === "continue") {
         if (visSetupState.step === 2 && !visSetupState.agreed) return;
         visSetupState.step = Math.min(3, Number(visSetupState.step || 1) + 1);
-        renderVisSetup();
+        try { renderVisSetup(); } catch (e) { pushVisDebug("continue->render failed: " + String((e && e.message) || e)); }
         return;
       }
       if (action === "back") {
         visSetupState.step = Math.max(1, Number(visSetupState.step || 1) - 1);
-        renderVisSetup();
+        try { renderVisSetup(); } catch (e) { pushVisDebug("back->render failed: " + String((e && e.message) || e)); }
         return;
       }
       if (action === "start" || action === "start-scan") {
-        startVisEnrollment();
+        try { startVisEnrollment(); } catch (e) { pushVisDebug("start scan failed to launch: " + String((e && e.message) || e)); }
       }
+    });
+    window.addEventListener("error", function (ev) {
+      if (!visSetupOpen) return;
+      pushVisDebug("Error: " + String(ev && ev.message ? ev.message : "unknown"));
+    });
+    window.addEventListener("unhandledrejection", function (ev) {
+      if (!visSetupOpen) return;
+      const reason = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : "unknown";
+      pushVisDebug("Promise rejection: " + String(reason));
     });
   }
 
@@ -1201,7 +1241,15 @@
   }
 
   async function detectFacesFromVideo() {
-    if (!visVideoEl || !visDetector) return [];
+    if (!visVideoEl) return [];
+    if (!visDetector) {
+      try {
+        if ("FaceDetector" in window) visDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      } catch (e) {
+        visDetector = null;
+      }
+    }
+    if (!visDetector) return [];
     try {
       const faces = await visDetector.detect(visVideoEl);
       return Array.isArray(faces) ? faces : [];
@@ -1387,7 +1435,8 @@
     if (visScanning) return;
     visScanning = true;
     visSetupState.step = 4;
-    renderVisSetup();
+    try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
+    pushVisDebug("Face scan started (legacy fallback).");
     const vectors = [];
     const landmarks = [];
     for (let i = 0; i < VIS_SCAN_FRAME_COUNT; i += 1) {
@@ -1408,7 +1457,8 @@
     visScanning = false;
     if (!vectors.length) {
       visSetupState.step = 3;
-      renderVisSetup();
+      try { renderVisSetup(); } catch (e) { pushVisDebug("scan fail render failed: " + String((e && e.message) || e)); }
+      pushVisDebug("Face scan captured 0 valid frames.");
       addLog("assistant", "Tutor: Setup scan failed. Keep face in frame and retry.");
       return;
     }

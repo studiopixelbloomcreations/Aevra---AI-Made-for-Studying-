@@ -4724,6 +4724,19 @@ body {
   transition: width 120ms linear;
 }
 
+.pi-vis-debug {
+  margin-top: 10px;
+  max-height: 120px;
+  overflow: auto;
+  border: 1px solid rgba(255, 102, 102, 0.45);
+  background: rgba(34, 8, 14, 0.75);
+  color: #ffd5d5;
+  font-size: 11px;
+  line-height: 1.35;
+  border-radius: 8px;
+  padding: 8px;
+}
+
 .pi-aurora {
   position: absolute;
   inset: 0;
