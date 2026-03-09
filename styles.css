@@ -4581,6 +4581,140 @@ body {
   display: grid;
 }
 
+.pi-panel.pi-vis-offline {
+  filter: grayscale(1) saturate(0.25) brightness(0.7);
+}
+
+.pi-panel.pi-vis-offline .pi-orb {
+  box-shadow:
+    0 0 0 1px rgba(200, 210, 224, 0.2),
+    0 14px 80px rgba(34, 42, 54, 0.45),
+    inset 0 0 22px rgba(180, 190, 204, 0.12),
+    inset 0 -20px 42px rgba(9, 12, 20, 0.9) !important;
+}
+
+.pi-top-dot.is-offline {
+  background: radial-gradient(circle at 40% 40%, #f0f4ff, #8c93a2 72%);
+  box-shadow: 0 0 8px rgba(154, 164, 186, 0.6);
+}
+
+.pi-top-dot.is-online {
+  background: radial-gradient(circle at 40% 40%, #b9ffff, #00c9ff 70%);
+  box-shadow: 0 0 10px rgba(0, 224, 255, 0.85);
+}
+
+.pi-vis-video,
+.pi-vis-canvas {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+  top: -9999px;
+}
+
+.pi-vis-setup-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 8, 16, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.pi-vis-setup {
+  width: min(620px, 92vw);
+  border-radius: 16px;
+  border: 1px solid rgba(164, 226, 255, 0.3);
+  background: linear-gradient(180deg, rgba(16, 28, 52, 0.96), rgba(7, 15, 30, 0.96));
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.48);
+  padding: 18px;
+}
+
+.pi-vis-setup-title {
+  font-size: 16px;
+  color: #e9f7ff;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.pi-vis-setup-body p {
+  color: rgba(220, 236, 255, 0.88);
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 8px 0;
+}
+
+.pi-vis-field,
+.pi-vis-check,
+.pi-vis-radio {
+  display: block;
+  color: rgba(220, 236, 255, 0.92);
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.pi-vis-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(111, 197, 255, 0.4);
+  background: rgba(8, 15, 30, 0.8);
+  color: #eef8ff;
+  padding: 9px 10px;
+}
+
+.pi-vis-note {
+  margin-top: 12px;
+  font-size: 11px;
+  color: rgba(182, 216, 240, 0.86);
+}
+
+.pi-vis-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pi-vis-btn {
+  border: 1px solid rgba(108, 204, 255, 0.45);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(25, 48, 86, 0.74);
+  color: #e6f5ff;
+  cursor: pointer;
+}
+
+.pi-vis-btn.ghost {
+  background: rgba(20, 24, 38, 0.7);
+  border-color: rgba(198, 214, 240, 0.2);
+}
+
+.pi-vis-btn[disabled] {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.pi-vis-progress {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(137, 203, 255, 0.35);
+  background: rgba(9, 18, 34, 0.88);
+}
+
+.pi-vis-progress-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #51b9ff, #96edff);
+  transition: width 120ms linear;
+}
+
 .pi-aurora {
   position: absolute;
   inset: 0;

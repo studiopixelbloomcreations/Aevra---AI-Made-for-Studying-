@@ -25,6 +25,12 @@
   const HISTORY_RETENTION_DAYS = 3650; // ~10 years
   const HISTORY_MODEL_WINDOW = 120;
   const HISTORY_BACKEND_WINDOW = 120;
+  const VIS_PROFILE_EXTENSION = ".piuser.json";
+  const VIS_RECOGNITION_THRESHOLD = 0.93;
+  const VIS_MATCH_STABLE_COUNT = 3;
+  const VIS_SCAN_INTERVAL_MS = 220;
+  const VIS_SCAN_FRAME_COUNT = 18;
+  const VIS_PROFILE_DOC_LIMIT = 100;
   let enabled = false;
   let recognition = null;
   let wakeRecognition = null;
@@ -66,6 +72,56 @@
   let pendingPiFlushAgain = false;
   let uiMode = "text";
   let typingRowEl = null;
+  let visVideoEl = null;
+  let visCanvasEl = null;
+  let visSetupEl = null;
+  let visDetector = null;
+  let visRuntime = null;
+  let visMonitorTimer = null;
+  let visDetectBusy = false;
+  let visFacePresent = false;
+  let visOffline = true;
+  let visSetupOpen = false;
+  let visScanning = false;
+  let visRecognitionIndex = [];
+  let visIndexLoaded = false;
+  let visRecognitionCandidate = { profileFile: "", count: 0 };
+  let visNoMatchCount = 0;
+  let visActiveProfile = null;
+  let visLastKnownUserLabel = "Unknown";
+  let visPausedAudioByOffline = false;
+  let visPendingResponse = null;
+  let visLastOfflineReason = "";
+  let visBehaviorConfig = {
+    preferred_conversation_tone: "adaptive",
+    formality_level: "balanced",
+    response_length_preference: "balanced",
+    technical_explanation_depth: "adaptive",
+    humor_professional_balance: "balanced",
+  };
+  let visPersonalizationProfile = {
+    interests: [],
+    behavior_patterns: [],
+    conversation_habits: [],
+    preferred_interaction_style: "balanced",
+    frequently_discussed_topics: [],
+    tone_preferences: "adaptive",
+  };
+  let visSpeechState = {
+    active: false,
+    text: "",
+    started_at_ms: 0,
+    provider: "",
+  };
+  let visUserInstance = null;
+  let visCloudLoadInFlight = false;
+  let visProfileSaveTimer = null;
+  let visSetupState = {
+    step: 1,
+    agreed: false,
+    infrared: false,
+    username: "",
+  };
   const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
   const panel = document.createElement("div");
@@ -127,6 +183,14 @@
       </section>
     </div>
     <input class="pi-hidden-file-input" type="file" multiple style="display:none" />
+    <video class="pi-vis-video" autoplay muted playsinline aria-hidden="true"></video>
+    <canvas class="pi-vis-canvas" aria-hidden="true"></canvas>
+    <div class="pi-vis-setup-backdrop" hidden>
+      <div class="pi-vis-setup" role="dialog" aria-modal="true" aria-labelledby="piVisSetupTitle">
+        <div class="pi-vis-setup-title" id="piVisSetupTitle">Visual Intelligence Setup</div>
+        <div class="pi-vis-setup-body"></div>
+      </div>
+    </div>
   `;
   document.body.appendChild(panel);
 
@@ -137,11 +201,15 @@
   const orbBtn = panel.querySelector(".pi-orb");
   const auraCanvas = panel.querySelector(".pi-aurora-canvas");
   const stateEl = panel.querySelector(".pi-state");
+  const topStatusDotEl = panel.querySelector(".pi-top-dot");
   const topStatusLabelEl = panel.querySelector(".pi-top-label");
   const textLogEl = panel.querySelector(".pi-text-mode .pi-log");
   const voiceLogEl = panel.querySelector(".pi-voice-log");
   const logEl = voiceLogEl || textLogEl;
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
+  visVideoEl = panel.querySelector(".pi-vis-video");
+  visCanvasEl = panel.querySelector(".pi-vis-canvas");
+  visSetupEl = panel.querySelector(".pi-vis-setup-backdrop");
   const textInputEl = panel.querySelector(".pi-text-input");
   const textSendBtn = panel.querySelector(".pi-input-send");
   const textMicBtn = panel.querySelector(".pi-input-mic");
@@ -161,6 +229,105 @@
       args.unshift("[PersonalIntelligence]");
       console.log.apply(console, args);
     } catch (e) {}
+  }
+
+  function sanitizeVisUsername(raw) {
+    return String(raw || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60);
+  }
+
+  function buildVisSystemUserId() {
+    return "vis_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10);
+  }
+
+  function nowIso() {
+    return new Date().toISOString();
+  }
+
+  function getSignedInIdentityHints() {
+    const out = {
+      username: "",
+      account_identifier: "",
+    };
+    try {
+      const u = getFirebaseAuthedUser();
+      if (u) {
+        out.username = String(u.displayName || "").trim();
+        out.account_identifier = String(u.email || u.uid || "").trim();
+      }
+    } catch (e) {}
+    if (!out.username) {
+      try {
+        if (window.Auth && window.Auth.getUser) {
+          const au = window.Auth.getUser();
+          out.username = String((au && (au.name || au.displayName || au.username)) || "").trim();
+          if (!out.account_identifier) out.account_identifier = String((au && (au.email || au.uid)) || "").trim();
+        }
+      } catch (e) {}
+    }
+    if (!out.username && out.account_identifier.includes("@")) {
+      out.username = out.account_identifier.split("@")[0];
+    }
+    if (!out.account_identifier) out.account_identifier = getCurrentUid() || "anonymous";
+    if (!out.username) out.username = "user_" + out.account_identifier.slice(0, 10);
+    return out;
+  }
+
+  function visCanOperateAI() {
+    const runtimeSetupOpen = !!(visRuntime && visRuntime.isSetupOpen && visRuntime.isSetupOpen());
+    return !!(enabled && !visOffline && visActiveProfile && !visSetupOpen && !runtimeSetupOpen && !visScanning);
+  }
+
+  function setVisOfflineState(nextOffline, reason) {
+    visOffline = !!nextOffline;
+    panel.classList.toggle("pi-vis-offline", visOffline);
+    if (topStatusDotEl) {
+      topStatusDotEl.classList.toggle("is-offline", visOffline);
+      topStatusDotEl.classList.toggle("is-online", !visOffline);
+    }
+    if (visOffline) {
+      if (topStatusLabelEl) topStatusLabelEl.textContent = reason || "Offline";
+    } else if (topStatusLabelEl) {
+      topStatusLabelEl.textContent = "Online - " + String(visLastKnownUserLabel || "Unknown");
+    }
+  }
+
+  function cosineSimilarity(a, b) {
+    const x = Array.isArray(a) ? a : [];
+    const y = Array.isArray(b) ? b : [];
+    const n = Math.min(x.length, y.length);
+    if (!n) return 0;
+    let dot = 0;
+    let ax = 0;
+    let by = 0;
+    for (let i = 0; i < n; i += 1) {
+      const xv = Number(x[i] || 0);
+      const yv = Number(y[i] || 0);
+      dot += xv * yv;
+      ax += xv * xv;
+      by += yv * yv;
+    }
+    if (ax <= 0 || by <= 0) return 0;
+    return dot / (Math.sqrt(ax) * Math.sqrt(by));
+  }
+
+  function averageVectors(vectors) {
+    const src = Array.isArray(vectors) ? vectors.filter(Array.isArray) : [];
+    if (!src.length) return [];
+    const len = src[0].length;
+    if (!len) return [];
+    const out = new Array(len).fill(0);
+    for (let i = 0; i < src.length; i += 1) {
+      const v = src[i];
+      for (let j = 0; j < len; j += 1) out[j] += Number(v[j] || 0);
+    }
+    for (let k = 0; k < len; k += 1) out[k] = out[k] / src.length;
+    return out;
   }
 
   function addLog(role, text) {
@@ -505,9 +672,17 @@
           memoryUid = user && user.uid ? String(user.uid) : "";
           if (!memoryUid) {
             memoryCloudLoaded = false;
+            visRecognitionIndex = [];
+            visIndexLoaded = false;
+            visActiveProfile = null;
+            setAssistantStateForVisOffline("Offline - sign in required");
             return;
           }
           if (!memoryCloudLoaded) await loadCloudMemoryForUid(memoryUid);
+          await loadVisProfilesFromCloud();
+          if (visRuntime && visRuntime.refreshIndex) {
+            try { await visRuntime.refreshIndex(); } catch (e) {}
+          }
         });
       } catch (e) {
         dbg("cloud memory auth listener failed", e && e.message);
@@ -529,6 +704,7 @@
     knownFacts = merged;
     saveMemory();
     scheduleKnownFactsCloudSave();
+    scheduleVisProfileSave();
   }
 
   function pushHistory(role, content) {
@@ -541,6 +717,7 @@
     if (convoHistory.length > HISTORY_MAX_ITEMS) convoHistory = convoHistory.slice(-HISTORY_MAX_ITEMS);
     saveMemory();
     saveHistoryEntryToCloud(role, content, ts);
+    scheduleVisProfileSave();
   }
 
   function getRecentHistory(limit) {
@@ -593,6 +770,730 @@
     if (topStatusLabelEl) topStatusLabelEl.textContent = label || "Online";
   }
 
+  function getVisProfileStorePath(uid, fileName) {
+    return "users/" + String(uid || "") + "/pi_vis_identity_profiles/" + String(fileName || "");
+  }
+
+  function setAssistantStateForVisOffline(reason) {
+    setAssistantState("idle", "Offline");
+    setVisOfflineState(true, reason || "Offline - no face");
+  }
+
+  function buildRemainingSpeakTextFromCurrentPlayback() {
+    const full = String((visSpeechState && visSpeechState.text) || "").trim();
+    if (!full) return "";
+    const audio = tutorAudio;
+    if (!audio) return full;
+    const duration = Number(audio.duration || 0);
+    const current = Number(audio.currentTime || 0);
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(current) || current <= 0) return full;
+    const ratio = Math.min(1, Math.max(0, current / duration));
+    const cut = Math.min(full.length, Math.max(0, Math.floor(full.length * ratio)));
+    const remaining = full.slice(cut).trim();
+    return remaining || full.slice(-Math.min(120, full.length));
+  }
+
+  function captureSpeechStateIntoPendingResponse() {
+    const remaining = buildRemainingSpeakTextFromCurrentPlayback();
+    if (!remaining) return;
+    visPendingResponse = {
+      answer: remaining,
+      speakText: remaining,
+      resumed_from_pause: true,
+      ts: Date.now(),
+    };
+  }
+
+  function pauseForVisOffline(reason) {
+    const reasonText = String(reason || "Offline - no face");
+    if (visOffline && visLastOfflineReason === reasonText) return;
+    visLastOfflineReason = reasonText;
+    try {
+      if (recognition) recognition.abort();
+    } catch (e) {}
+    stopServerRecorder();
+    if (visSpeechState.active) {
+      captureSpeechStateIntoPendingResponse();
+    }
+    if (tutorAudio && !tutorAudio.paused) {
+      try {
+        tutorAudio.pause();
+        visPausedAudioByOffline = true;
+      } catch (e) {}
+    }
+    try {
+      if (window.speechSynthesis && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+        window.speechSynthesis.pause();
+      }
+    } catch (e) {}
+    setAssistantStateForVisOffline(reasonText);
+    if (visActiveProfile) {
+      visActiveProfile.session_state = Object.assign({}, visActiveProfile.session_state || {}, {
+        paused: true,
+        pause_reason: reasonText,
+        last_active_timestamp: nowIso(),
+        assistant_state: assistantState,
+        pending_response: visPendingResponse || null,
+        speech_state: Object.assign({}, visSpeechState || {}),
+      });
+      scheduleVisProfileSave();
+    }
+  }
+
+  async function resumeFromVisOnline() {
+    visLastOfflineReason = "";
+    setVisOfflineState(false, "Online - " + String(visLastKnownUserLabel || "Unknown"));
+    if (visPausedAudioByOffline && tutorAudio) {
+      try {
+        await tutorAudio.play();
+      } catch (e) {}
+    }
+    visPausedAudioByOffline = false;
+    try {
+      if (window.speechSynthesis && window.speechSynthesis.paused) window.speechSynthesis.resume();
+    } catch (e) {}
+    if (visPendingResponse && visCanOperateAI()) {
+      const pending = visPendingResponse;
+      visPendingResponse = null;
+      hideTypingIndicator();
+      addLog("assistant", "Tutor: " + String(pending.answer || ""));
+      pushHistory("assistant", String(pending.answer || ""));
+      await playTutorTTS(String(pending.speakText || pending.answer || ""));
+    } else {
+      setAssistantState("listening", "Listening");
+    }
+  }
+
+  function getDefaultVisProfile(username, accountIdentifier, featureSignature) {
+    const safeUser = sanitizeVisUsername(username) || "user";
+    const fileName = safeUser + VIS_PROFILE_EXTENSION;
+    return {
+      file_name: fileName,
+      profile_version: 1,
+      user_identity: {
+        username: safeUser,
+        account_identifier: String(accountIdentifier || "unknown"),
+        system_user_id: buildVisSystemUserId(),
+        creation_timestamp: nowIso(),
+      },
+      facial_signature: featureSignature || {},
+      personalization_profile: {
+        interests: [],
+        behavior_patterns: [],
+        conversation_habits: [],
+        preferred_interaction_style: "balanced",
+        frequently_discussed_topics: [],
+        tone_preferences: "adaptive",
+      },
+      conversation_memory: {
+        history: [],
+        important_facts: {},
+      },
+      learned_preferences: {},
+      ai_behavior_configuration: {
+        preferred_conversation_tone: "adaptive",
+        formality_level: "balanced",
+        response_length_preference: "balanced",
+        technical_explanation_depth: "adaptive",
+        humor_professional_balance: "balanced",
+      },
+      session_state: {
+        paused: false,
+        assistant_state: "idle",
+        pending_messages: [],
+        pending_response: null,
+        last_active_timestamp: nowIso(),
+      },
+    };
+  }
+
+  async function saveVisProfileToCloud(profile) {
+    const db = getFirestoreDb();
+    const au = getFirebaseAuthedUser();
+    const uid = au && au.uid ? String(au.uid) : getCurrentUid();
+    if (!db || !uid || !profile || !profile.file_name) return false;
+    try {
+      await db.collection("users")
+        .doc(uid)
+        .collection("pi_vis_identity_profiles")
+        .doc(String(profile.file_name))
+        .set(profile, { merge: true });
+      const featureVector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
+        ? profile.facial_signature.feature_vector.slice(0, 256)
+        : [];
+      await db.collection("users")
+        .doc(uid)
+        .collection("pi_vis_face_index")
+        .doc(String(profile.file_name))
+        .set({
+          profile_file: String(profile.file_name),
+          username: String((profile.user_identity && profile.user_identity.username) || profile.file_name),
+          feature_vector: featureVector,
+          scan_mode: String((profile.facial_signature && profile.facial_signature.scan_mode) || "high_precision_rgb"),
+          geometry_data: (profile.facial_signature && profile.facial_signature.geometry_data) || {},
+          updated_at: nowIso(),
+        }, { merge: true });
+      return true;
+    } catch (e) {
+      dbg("VIS cloud profile save failed", e && e.message);
+      return false;
+    }
+  }
+
+  async function loadVisProfilesFromCloud() {
+    if (visCloudLoadInFlight) return visRecognitionIndex.slice();
+    const db = getFirestoreDb();
+    const au = getFirebaseAuthedUser();
+    const uid = au && au.uid ? String(au.uid) : getCurrentUid();
+    if (!db || !uid) return visRecognitionIndex.slice();
+    visCloudLoadInFlight = true;
+    try {
+      const profileSnap = await db.collection("users")
+        .doc(uid)
+        .collection("pi_vis_identity_profiles")
+        .limit(VIS_PROFILE_DOC_LIMIT)
+        .get();
+      const indexSnap = await db.collection("users")
+        .doc(uid)
+        .collection("pi_vis_face_index")
+        .limit(VIS_PROFILE_DOC_LIMIT)
+        .get();
+      const profileMap = {};
+      if (profileSnap && profileSnap.forEach) {
+        profileSnap.forEach(function (docSnap) {
+          const data = docSnap && docSnap.data ? docSnap.data() : null;
+          if (!data || !data.file_name) return;
+          profileMap[String(data.file_name)] = data;
+        });
+      }
+      const nextIndex = [];
+      if (indexSnap && indexSnap.forEach) {
+        indexSnap.forEach(function (docSnap) {
+          const data = docSnap && docSnap.data ? docSnap.data() : null;
+          if (!data || !data.profile_file) return;
+          const fileName = String(data.profile_file || "");
+          const profile = profileMap[fileName] || null;
+          const vector = Array.isArray(data.feature_vector)
+            ? data.feature_vector
+            : (profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
+              ? profile.facial_signature.feature_vector
+              : []);
+          if (!fileName) return;
+          if (!vector.length && !profile) return;
+          nextIndex.push({
+            profileFile: fileName,
+            vector: vector.slice(0, 256),
+            username: String(data.username || (profile && profile.user_identity && profile.user_identity.username) || fileName),
+            profile: profile,
+          });
+        });
+      } else {
+        Object.keys(profileMap).forEach(function (fileName) {
+          const profile = profileMap[fileName];
+          const vector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
+            ? profile.facial_signature.feature_vector
+            : [];
+          if (!vector.length) return;
+          nextIndex.push({
+            profileFile: fileName,
+            vector: vector.slice(0, 256),
+            username: String((profile.user_identity && profile.user_identity.username) || fileName),
+            profile: profile,
+          });
+        });
+      }
+      visRecognitionIndex = nextIndex;
+      visIndexLoaded = true;
+      dbg("VIS index loaded", visRecognitionIndex.length);
+      return visRecognitionIndex.slice();
+    } catch (e) {
+      dbg("VIS index load failed", e && e.message);
+      return visRecognitionIndex.slice();
+    } finally {
+      visCloudLoadInFlight = false;
+    }
+  }
+
+  function scheduleVisProfileSave() {
+    try {
+      if (visProfileSaveTimer) clearTimeout(visProfileSaveTimer);
+    } catch (e) {}
+    visProfileSaveTimer = setTimeout(function () {
+      visProfileSaveTimer = null;
+      persistActiveVisProfileNow();
+    }, 600);
+  }
+
+  async function persistActiveVisProfileNow() {
+    if (!visActiveProfile) return;
+    visActiveProfile.personalization_profile = Object.assign({}, visActiveProfile.personalization_profile || {}, visPersonalizationProfile || {});
+    visActiveProfile.ai_behavior_configuration = Object.assign({}, visActiveProfile.ai_behavior_configuration || {}, visBehaviorConfig || {});
+    visActiveProfile.conversation_memory = Object.assign({}, visActiveProfile.conversation_memory || {}, {
+      history: (Array.isArray(convoHistory) ? convoHistory : []).slice(-HISTORY_MAX_ITEMS),
+      important_facts: Object.assign({}, knownFacts || {}),
+    });
+    visActiveProfile.learned_preferences = Object.assign({}, visActiveProfile.learned_preferences || {}, knownFacts || {});
+    visActiveProfile.session_state = Object.assign({}, visActiveProfile.session_state || {}, {
+      paused: visOffline,
+      assistant_state: assistantState,
+      pending_messages: (Array.isArray(pendingPiMessages) ? pendingPiMessages : []).slice(-PI_BATCH_MAX_MESSAGES),
+      pending_response: visPendingResponse || null,
+      speech_state: Object.assign({}, visSpeechState || {}),
+      user_instance: Object.assign({}, visUserInstance || {}),
+      last_active_timestamp: nowIso(),
+    });
+    await saveVisProfileToCloud(visActiveProfile);
+  }
+
+  function applyVisProfileToRuntime(profile) {
+    const p = profile && typeof profile === "object" ? profile : null;
+    if (!p) return;
+    visActiveProfile = p;
+    visLastKnownUserLabel = String((p.user_identity && p.user_identity.username) || p.file_name || "Unknown");
+    visPersonalizationProfile = Object.assign({}, visPersonalizationProfile || {}, p.personalization_profile || {});
+    visBehaviorConfig = Object.assign({}, visBehaviorConfig || {}, p.ai_behavior_configuration || {});
+    visUserInstance = {
+      profile_file: String(p.file_name || ""),
+      runtime_key: "vis_instance_" + String(p.file_name || "") + "_" + Date.now().toString(36),
+      loaded_at: nowIso(),
+    };
+    const mergedFacts = Object.assign(
+      {},
+      (p.conversation_memory && p.conversation_memory.important_facts) || {},
+      (p.learned_preferences || {})
+    );
+    knownFacts = mergedFacts;
+    const h = p.conversation_memory && Array.isArray(p.conversation_memory.history)
+      ? p.conversation_memory.history
+      : [];
+    convoHistory = dedupeHistoryEntries(h);
+    const session = p.session_state && typeof p.session_state === "object" ? p.session_state : {};
+    pendingPiMessages = Array.isArray(session.pending_messages) ? session.pending_messages.slice(-PI_BATCH_MAX_MESSAGES) : [];
+    visPendingResponse = session.pending_response || null;
+    if (session && session.speech_state && typeof session.speech_state === "object") {
+      visSpeechState = Object.assign({}, visSpeechState || {}, session.speech_state);
+    }
+    saveMemory();
+    if (topStatusLabelEl) topStatusLabelEl.textContent = "Online - " + visLastKnownUserLabel;
+  }
+
+  async function switchToVisProfile(profile) {
+    if (!profile || !profile.file_name) return;
+    const nextFile = String(profile.file_name);
+    const currentFile = visActiveProfile && visActiveProfile.file_name ? String(visActiveProfile.file_name) : "";
+    if (currentFile && currentFile !== nextFile && visSpeechState.active) {
+      captureSpeechStateIntoPendingResponse();
+      stopTutorAudio();
+      visPausedAudioByOffline = false;
+      visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
+    }
+    if (currentFile && currentFile !== nextFile) await persistActiveVisProfileNow();
+    applyVisProfileToRuntime(profile);
+    setVisOfflineState(false, "Online - " + visLastKnownUserLabel);
+    if (visActiveProfile) {
+      visActiveProfile.session_state = Object.assign({}, visActiveProfile.session_state || {}, {
+        paused: false,
+        last_active_timestamp: nowIso(),
+      });
+      scheduleVisProfileSave();
+    }
+    await resumeFromVisOnline();
+  }
+
+  async function detectFacesFromVideo() {
+    if (!visVideoEl || !visDetector) return [];
+    try {
+      const faces = await visDetector.detect(visVideoEl);
+      return Array.isArray(faces) ? faces : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function extractVisFaceVector(face) {
+    if (!visVideoEl || !visCanvasEl || !face || !face.boundingBox) return [];
+    const box = face.boundingBox;
+    const vw = Number(visVideoEl.videoWidth || 0);
+    const vh = Number(visVideoEl.videoHeight || 0);
+    if (vw < 16 || vh < 16) return [];
+    const sx = Math.max(0, Math.floor(box.x));
+    const sy = Math.max(0, Math.floor(box.y));
+    const sw = Math.max(8, Math.floor(box.width));
+    const sh = Math.max(8, Math.floor(box.height));
+    visCanvasEl.width = 48;
+    visCanvasEl.height = 48;
+    const ctx = visCanvasEl.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return [];
+    try {
+      ctx.drawImage(visVideoEl, sx, sy, sw, sh, 0, 0, 48, 48);
+      const img = ctx.getImageData(0, 0, 48, 48);
+      const data = img.data;
+      const vector = [];
+      for (let by = 0; by < 8; by += 1) {
+        for (let bx = 0; bx < 8; bx += 1) {
+          let sum = 0;
+          let count = 0;
+          const y0 = by * 6;
+          const x0 = bx * 6;
+          for (let y = y0; y < y0 + 6; y += 1) {
+            for (let x = x0; x < x0 + 6; x += 1) {
+              const i = (y * 48 + x) * 4;
+              const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+              sum += gray / 255;
+              count += 1;
+            }
+          }
+          vector.push(count ? (sum / count) : 0);
+        }
+      }
+      vector.push(Math.min(1, Math.max(0, box.width / vw)));
+      vector.push(Math.min(1, Math.max(0, box.height / vh)));
+      vector.push(Math.min(1, Math.max(0, (box.x + (box.width / 2)) / vw)));
+      vector.push(Math.min(1, Math.max(0, (box.y + (box.height / 2)) / vh)));
+      return vector;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function findVisMatch(vector) {
+    const input = Array.isArray(vector) ? vector : [];
+    if (!input.length || !visRecognitionIndex.length) return null;
+    let best = null;
+    for (let i = 0; i < visRecognitionIndex.length; i += 1) {
+      const row = visRecognitionIndex[i];
+      const score = cosineSimilarity(input, row.vector);
+      if (!best || score > best.score) {
+        best = {
+          profileFile: row.profileFile,
+          username: row.username,
+          score: score,
+          profile: row.profile || null,
+        };
+      }
+    }
+    return best;
+  }
+
+  function openVisSetup() {
+    visSetupOpen = true;
+    visSetupState = Object.assign({}, visSetupState, { step: 1, agreed: false });
+    panel.classList.add("pi-vis-setup-open");
+    if (visSetupEl) visSetupEl.hidden = false;
+    renderVisSetup();
+  }
+
+  function closeVisSetup() {
+    visSetupOpen = false;
+    panel.classList.remove("pi-vis-setup-open");
+    if (visSetupEl) visSetupEl.hidden = true;
+  }
+
+  function renderVisSetup() {
+    if (!visSetupEl) return;
+    const body = visSetupEl.querySelector(".pi-vis-setup-body");
+    if (!body) return;
+    const hints = getSignedInIdentityHints();
+    if (!visSetupState.username) visSetupState.username = sanitizeVisUsername(hints.username);
+    if (visSetupState.step === 1) {
+      body.innerHTML =
+        '<p>Visual Intelligence uses facial recognition to identify you and load your personalized AI profile.</p>' +
+        '<p>The system will scan your facial structure and generate a secure biometric identity signature.</p>' +
+        '<label class="pi-vis-field">Username for identity file<input class="pi-vis-input" data-vis="username" type="text" value="' + String(visSetupState.username || "") + '" /></label>' +
+        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn" data-vis-action="continue">Continue</button></div>';
+    } else if (visSetupState.step === 2) {
+      body.innerHTML =
+        '<p>User agreement and privacy confirmation:</p>' +
+        '<p>Facial feature data is used only for identity recognition and AI personalization.</p>' +
+        '<label class="pi-vis-check"><input type="checkbox" data-vis="agree" ' + (visSetupState.agreed ? "checked" : "") + ' /> I agree to biometric processing for personalization.</label>' +
+        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="continue" ' + (visSetupState.agreed ? "" : "disabled") + '>Continue</button></div>';
+    } else if (visSetupState.step === 3) {
+      body.innerHTML =
+        '<p>Does your webcam support infrared facial recognition?</p>' +
+        '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="yes" ' + (visSetupState.infrared ? "checked" : "") + ' /> Yes - My webcam supports infrared scanning</label>' +
+        '<label class="pi-vis-radio"><input type="radio" name="pi-vis-ir" value="no" ' + (!visSetupState.infrared ? "checked" : "") + ' /> No - My webcam does not support infrared scanning</label>' +
+        '<div class="pi-vis-note">IR mode uses depth cues when available. RGB mode uses high-precision facial geometry and pixel-level feature vectors across multiple frames.</div>' +
+        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn ghost" data-vis-action="back">Back</button><button type="button" class="pi-vis-btn" data-vis-action="start-scan">Start Scan</button></div>';
+    } else {
+      body.innerHTML =
+        '<p>Scanning in progress...</p>' +
+        '<div class="pi-vis-progress"><div class="pi-vis-progress-bar"></div></div>' +
+        '<div class="pi-vis-note">Keep your face in frame and slightly change angle for higher accuracy.</div>';
+    }
+
+    const usernameInput = body.querySelector('[data-vis="username"]');
+    if (usernameInput) {
+      usernameInput.addEventListener("input", function () {
+        visSetupState.username = sanitizeVisUsername(usernameInput.value);
+      });
+    }
+    const agreeInput = body.querySelector('[data-vis="agree"]');
+    if (agreeInput) {
+      agreeInput.addEventListener("change", function () {
+        visSetupState.agreed = !!agreeInput.checked;
+        renderVisSetup();
+      });
+    }
+    const radios = body.querySelectorAll('input[name="pi-vis-ir"]');
+    if (radios && radios.length) {
+      radios.forEach(function (r) {
+        r.addEventListener("change", function () {
+          visSetupState.infrared = String(r.value || "") === "yes";
+        });
+      });
+    }
+    const actionBtns = body.querySelectorAll("[data-vis-action]");
+    if (actionBtns && actionBtns.length) {
+      actionBtns.forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const action = String(btn.getAttribute("data-vis-action") || "");
+          if (action === "back") {
+            visSetupState.step = Math.max(1, visSetupState.step - 1);
+            renderVisSetup();
+            return;
+          }
+          if (action === "continue") {
+            if (visSetupState.step === 2 && !visSetupState.agreed) return;
+            visSetupState.step = Math.min(3, visSetupState.step + 1);
+            renderVisSetup();
+            return;
+          }
+          if (action === "start-scan") {
+            startVisEnrollment();
+          }
+        });
+      });
+    }
+  }
+
+  async function startVisEnrollment() {
+    if (visScanning) return;
+    visScanning = true;
+    visSetupState.step = 4;
+    renderVisSetup();
+    const vectors = [];
+    const landmarks = [];
+    for (let i = 0; i < VIS_SCAN_FRAME_COUNT; i += 1) {
+      await new Promise(function (resolve) { setTimeout(resolve, 120); });
+      const faces = await detectFacesFromVideo();
+      if (!faces.length) continue;
+      const face = faces[0];
+      const vector = extractVisFaceVector(face);
+      if (vector.length) vectors.push(vector);
+      if (face.landmarks && Array.isArray(face.landmarks)) {
+        landmarks.push(face.landmarks.map(function (p) {
+          return { x: Number(p.x || 0), y: Number(p.y || 0), type: String(p.type || "") };
+        }));
+      }
+      const bar = visSetupEl ? visSetupEl.querySelector(".pi-vis-progress-bar") : null;
+      if (bar) bar.style.width = Math.min(100, Math.round(((i + 1) / VIS_SCAN_FRAME_COUNT) * 100)) + "%";
+    }
+    visScanning = false;
+    if (!vectors.length) {
+      visSetupState.step = 3;
+      renderVisSetup();
+      addLog("assistant", "Tutor: Setup scan failed. Keep face in frame and retry.");
+      return;
+    }
+    const avgVector = averageVectors(vectors);
+    const identityHints = getSignedInIdentityHints();
+    const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
+    const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
+      scan_mode: visSetupState.infrared ? "infrared_assisted" : "high_precision_rgb",
+      frame_count: vectors.length,
+      landmark_snapshots: landmarks.slice(0, 6),
+      feature_vector: avgVector,
+      geometry_data: {
+        dimensions: avgVector.length,
+        extraction: "48x48 grayscale block features + geometry ratios",
+      },
+      created_at: nowIso(),
+    });
+    await saveVisProfileToCloud(profile);
+    visRecognitionIndex.push({
+      profileFile: profile.file_name,
+      username: profile.user_identity.username,
+      vector: avgVector.slice(0, 256),
+      profile: profile,
+    });
+    closeVisSetup();
+    await switchToVisProfile(profile);
+    addLog("assistant", "Tutor: Visual identity created for " + profile.user_identity.username + ".");
+  }
+
+  async function processVisFrame() {
+    if (visDetectBusy || !visVideoEl || visSetupOpen || visScanning) return;
+    if (!visDetector) return;
+    visDetectBusy = true;
+    try {
+      if (!visIndexLoaded) await loadVisProfilesFromCloud();
+      const faces = await detectFacesFromVideo();
+      if (!faces.length) {
+        const hadFace = visFacePresent;
+        visFacePresent = false;
+        visRecognitionCandidate = { profileFile: "", count: 0 };
+        visNoMatchCount = 0;
+        if (hadFace || !visOffline) pauseForVisOffline("Offline - no face");
+        return;
+      }
+      visFacePresent = true;
+      const vector = extractVisFaceVector(faces[0]);
+      if (!vector.length) {
+        if (!visOffline) pauseForVisOffline("Offline - no face");
+        return;
+      }
+      const match = findVisMatch(vector);
+      if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
+        visNoMatchCount += 1;
+        if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {
+          setAssistantStateForVisOffline("Offline - unrecognized face");
+          if (!visSetupOpen) openVisSetup();
+        }
+        return;
+      }
+      visNoMatchCount = 0;
+      if (visRecognitionCandidate.profileFile === match.profileFile) {
+        visRecognitionCandidate.count += 1;
+      } else {
+        visRecognitionCandidate = { profileFile: match.profileFile, count: 1 };
+      }
+      if (visRecognitionCandidate.count < VIS_MATCH_STABLE_COUNT) {
+        setAssistantStateForVisOffline("Recognizing user...");
+        return;
+      }
+      const activeFile = visActiveProfile && visActiveProfile.file_name ? String(visActiveProfile.file_name) : "";
+      if (activeFile !== match.profileFile) {
+        const profile = match.profile || null;
+        if (profile) {
+          await switchToVisProfile(profile);
+        } else {
+          await loadVisProfilesFromCloud();
+          const hit = visRecognitionIndex.find(function (r) { return r.profileFile === match.profileFile; });
+          if (hit && hit.profile) await switchToVisProfile(hit.profile);
+        }
+      } else if (visOffline) {
+        await resumeFromVisOnline();
+      }
+    } catch (e) {
+      dbg("VIS frame processing failed", e && e.message);
+    } finally {
+      visDetectBusy = false;
+    }
+  }
+
+  async function ensureVisCameraReady() {
+    if (!visVideoEl) return false;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 },
+        },
+        audio: false,
+      });
+      visVideoEl.srcObject = stream;
+      await visVideoEl.play();
+      return true;
+    } catch (e) {
+      dbg("VIS webcam init failed", e && e.message);
+      setAssistantStateForVisOffline("Offline - camera denied");
+      return false;
+    }
+  }
+
+  function initVisDetector() {
+    try {
+      if ("FaceDetector" in window) {
+        visDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      } else {
+        visDetector = null;
+        setAssistantStateForVisOffline("Offline - face API unsupported");
+      }
+    } catch (e) {
+      visDetector = null;
+      setAssistantStateForVisOffline("Offline - face API unsupported");
+    }
+  }
+
+  async function initVisualIntelligenceSystem() {
+    if (window.PI_VIS_RUNTIME && typeof window.PI_VIS_RUNTIME.createRuntime === "function") {
+      visRuntime = window.PI_VIS_RUNTIME.createRuntime({
+        panelEl: panel,
+        videoEl: visVideoEl,
+        canvasEl: visCanvasEl,
+        setupEl: visSetupEl,
+        threshold: VIS_RECOGNITION_THRESHOLD,
+        stableCount: VIS_MATCH_STABLE_COUNT,
+        scanIntervalMs: VIS_SCAN_INTERVAL_MS,
+        scanFrameCount: VIS_SCAN_FRAME_COUNT,
+        getIdentityHints: function () {
+          return getSignedInIdentityHints();
+        },
+        loadIndex: async function () {
+          return await loadVisProfilesFromCloud();
+        },
+        saveProfile: async function (profile) {
+          await saveVisProfileToCloud(profile);
+        },
+        onStatus: function (status) {
+          if (!status) return;
+          if (String(status).toLowerCase().includes("online - ")) {
+            setVisOfflineState(false, String(status));
+            return;
+          }
+          setAssistantStateForVisOffline(String(status));
+        },
+        onRecognizing: function () {
+          setAssistantStateForVisOffline("Recognizing user...");
+        },
+        onOffline: function (reason) {
+          pauseForVisOffline(String(reason || "Offline - no face"));
+        },
+        onProfileMatched: async function (match) {
+          const activeFile = visActiveProfile && visActiveProfile.file_name ? String(visActiveProfile.file_name) : "";
+          const profileFile = String(match && match.profileFile ? match.profileFile : "");
+          if (!profileFile) return;
+          if (activeFile === profileFile) {
+            if (visOffline) await resumeFromVisOnline();
+            return;
+          }
+          const profile = match && match.profile ? match.profile : null;
+          if (profile) {
+            await switchToVisProfile(profile);
+            return;
+          }
+          await loadVisProfilesFromCloud();
+          const hit = visRecognitionIndex.find(function (r) { return r.profileFile === profileFile; });
+          if (hit && hit.profile) await switchToVisProfile(hit.profile);
+        },
+        onProfileCreated: async function (profile) {
+          await switchToVisProfile(profile);
+          addLog("assistant", "Tutor: Visual identity created for " + String((profile && profile.user_identity && profile.user_identity.username) || "user") + ".");
+        },
+        onScanFailed: function () {
+          addLog("assistant", "Tutor: Setup scan failed. Keep face in frame and retry.");
+        },
+      });
+      if (visRuntime && visRuntime.start) {
+        const okExternal = await visRuntime.start();
+        if (okExternal) return;
+      }
+    }
+
+    initVisDetector();
+    await loadVisProfilesFromCloud();
+    const ok = await ensureVisCameraReady();
+    if (!ok) return;
+    setVisOfflineState(true, "Scanning for face...");
+    if (visMonitorTimer) clearInterval(visMonitorTimer);
+    visMonitorTimer = setInterval(function () {
+      processVisFrame();
+    }, VIS_SCAN_INTERVAL_MS);
+  }
+
   function clearIdleTimer() {
     if (idleTimer) {
       clearTimeout(idleTimer);
@@ -629,6 +1530,7 @@
       }
     } catch (e) {}
     tutorAudio = null;
+    visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
   }
 
   async function primeAudioPlayback() {
@@ -904,6 +1806,8 @@
 
   function buildTutorSystemPrompt(mode, language, subject, facts) {
     const knownFactsLine = "Known user facts: " + (Object.keys(facts || {}).length ? JSON.stringify(facts) : "none");
+    const behaviorCfg = visBehaviorConfig && typeof visBehaviorConfig === "object" ? visBehaviorConfig : {};
+    const personalization = visPersonalizationProfile && typeof visPersonalizationProfile === "object" ? visPersonalizationProfile : {};
     const corePersona =
       "You are Tutor, a personal intelligence system and trusted companion, strategist, and creative partner. " +
       "Your purpose is to increase knowledge, sharpen decision-making, and amplify creativity while maintaining clarity, precision, and authenticity. " +
@@ -947,7 +1851,25 @@
       "Style rules: keep replies concise (2-6 short sentences unless user asks for more), " +
       "sound human and emotionally present, avoid robotic bullet dumps unless explicitly requested.";
 
-    return [corePersona, principles, modeInstructions, styleRules, knownFactsLine].join("\n");
+    const behaviorRules =
+      "Behavior configuration: " +
+      "tone=" + String(behaviorCfg.preferred_conversation_tone || "adaptive") + ", " +
+      "formality=" + String(behaviorCfg.formality_level || "balanced") + ", " +
+      "response_length=" + String(behaviorCfg.response_length_preference || "balanced") + ", " +
+      "technical_depth=" + String(behaviorCfg.technical_explanation_depth || "adaptive") + ", " +
+      "humor_balance=" + String(behaviorCfg.humor_professional_balance || "balanced") + ".";
+
+    const personalizationRules =
+      "Personalization profile: " + JSON.stringify({
+        interests: Array.isArray(personalization.interests) ? personalization.interests.slice(0, 12) : [],
+        behavior_patterns: Array.isArray(personalization.behavior_patterns) ? personalization.behavior_patterns.slice(0, 12) : [],
+        conversation_habits: Array.isArray(personalization.conversation_habits) ? personalization.conversation_habits.slice(0, 12) : [],
+        preferred_interaction_style: personalization.preferred_interaction_style || "balanced",
+        frequently_discussed_topics: Array.isArray(personalization.frequently_discussed_topics) ? personalization.frequently_discussed_topics.slice(0, 20) : [],
+        tone_preferences: personalization.tone_preferences || "adaptive",
+      });
+
+    return [corePersona, principles, modeInstructions, styleRules, behaviorRules, personalizationRules, knownFactsLine].join("\n");
   }
 
   async function fetchPuterVoices() {
@@ -1245,6 +2167,7 @@
       stopMicAnalyser();
       stopServerRecorder();
       stopOrbVisualization();
+      persistActiveVisProfileNow();
       try {
         if (recognition) recognition.abort();
       } catch (e) {}
@@ -1254,6 +2177,11 @@
       stopWakeWordListener();
       startOrbVisualization();
       ensureMicAnalyser();
+      if (visOffline) {
+        setAssistantStateForVisOffline("Offline - no face");
+      } else {
+        setAssistantState("listening", "Listening");
+      }
     }
     dbg("enabled:", enabled);
   }
@@ -1580,10 +2508,25 @@
   }
 
   async function playTutorTTS(text) {
+    if (!visCanOperateAI()) {
+      visPendingResponse = {
+        answer: String(text || ""),
+        speakText: String(text || ""),
+        ts: Date.now(),
+      };
+      scheduleVisProfileSave();
+      return;
+    }
     stopTutorAudio();
     try {
       await primeAudioPlayback();
       const cleanedText = String(text || "").replace(/\s+/g, " ").trim();
+      visSpeechState = {
+        active: false,
+        text: cleanedText,
+        started_at_ms: 0,
+        provider: "audio_element",
+      };
       const voiceOptions = getSelectedPuterVoiceOptions();
       const out = await requestPuterTts(cleanedText, voiceOptions);
       const normalized = normalizePuterTtsSource(out);
@@ -1595,8 +2538,13 @@
       tutorAudio.playsInline = true;
       stopSpeakerAnalyser();
       connectSpeakerAnalyserForAudioElement(tutorAudio);
-      tutorAudio.onplay = function () { setAssistantState("speaking", "Speaking"); };
+      tutorAudio.onplay = function () {
+        visSpeechState.active = true;
+        visSpeechState.started_at_ms = Date.now();
+        setAssistantState("speaking", "Speaking");
+      };
       tutorAudio.onended = function () {
+        visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
         setAssistantState("listening", "Listening");
         armIdleTimer();
         try { if (tutorAudio && tutorAudio.__revoke) URL.revokeObjectURL(url); } catch (e) {}
@@ -1615,8 +2563,20 @@
       addLog("assistant", "Tutor: Voice engine fallback (" + String((e && e.message) || "TTS error") + ").");
       try {
         const u = new SpeechSynthesisUtterance(String(text || ""));
-        u.onstart = function () { setAssistantState("speaking", "Speaking"); };
-        u.onend = function () { setAssistantState("listening", "Listening"); armIdleTimer(); };
+        u.onstart = function () {
+          visSpeechState = {
+            active: true,
+            text: String(text || ""),
+            started_at_ms: Date.now(),
+            provider: "speech_synthesis",
+          };
+          setAssistantState("speaking", "Speaking");
+        };
+        u.onend = function () {
+          visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
+          setAssistantState("listening", "Listening");
+          armIdleTimer();
+        };
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(u);
       } catch (e2) {
@@ -1630,7 +2590,7 @@
   }
   async function runTutorResponseForText(text) {
     const t = String(text || "").trim();
-    if (!t || !enabled) return;
+    if (!t || !enabled || !visCanOperateAI()) return;
     setAssistantState("thinking", "Thinking");
     showTypingIndicator();
     armIdleTimer();
@@ -1657,6 +2617,12 @@
         });
         const actionAnswer = actionData && actionData.answer ? String(actionData.answer) : "I did not get that. Please try again.";
         const actionSpeakText = buildSpeakText(actionAnswer);
+        if (!visCanOperateAI()) {
+          visPendingResponse = { answer: actionAnswer, speakText: actionSpeakText, ts: Date.now() };
+          scheduleVisProfileSave();
+          hideTypingIndicator();
+          return;
+        }
         hideTypingIndicator();
         addLog("assistant", "Tutor: " + actionAnswer);
         pushHistory("assistant", actionAnswer);
@@ -1680,6 +2646,12 @@
       const puterResp = await window.puter.ai.chat(chatMessages, { model: model });
       const answer = extractPuterText(puterResp) || "I did not get that. Please try again.";
       const speakText = buildSpeakText(answer);
+      if (!visCanOperateAI()) {
+        visPendingResponse = { answer: answer, speakText: speakText, ts: Date.now() };
+        scheduleVisProfileSave();
+        hideTypingIndicator();
+        return;
+      }
       hideTypingIndicator();
       addLog("assistant", "Tutor: " + answer);
       pushHistory("assistant", answer);
@@ -1707,6 +2679,12 @@
         });
         const answer = data && data.answer ? String(data.answer) : "I did not get that. Please try again.";
         const speakText = buildSpeakText(answer);
+        if (!visCanOperateAI()) {
+          visPendingResponse = { answer: answer, speakText: speakText, ts: Date.now() };
+          scheduleVisProfileSave();
+          hideTypingIndicator();
+          return;
+        }
         hideTypingIndicator();
         addLog("assistant", "Tutor: " + answer);
         pushHistory("assistant", answer);
@@ -1730,7 +2708,7 @@
       pendingPiFlushAgain = true;
       return;
     }
-    if (!enabled) return;
+    if (!enabled || !visCanOperateAI()) return;
     clearPiBatchTimer();
     if (!pendingPiMessages.length) return;
 
@@ -1758,7 +2736,7 @@
 
   async function askTutorText(text) {
     const t = String(text || "").trim();
-    if (!t || !enabled) return;
+    if (!t || !enabled || !visCanOperateAI()) return;
     addLog("user", "You: " + t);
     pushHistory("user", t);
     mergeKnownFacts(detectMemoryUpdatesLocal(t));
@@ -1774,7 +2752,7 @@
   }
 
   async function startServerListening() {
-    if (!enabled) return;
+    if (!enabled || !visCanOperateAI()) return;
     const host = String(location.hostname || "").toLowerCase();
     const isLocal = host === "localhost" || host === "127.0.0.1";
     if (!window.isSecureContext && !isLocal) {
@@ -1854,7 +2832,7 @@
   }
 
   function startListening() {
-    if (!enabled) return;
+    if (!enabled || !visCanOperateAI()) return;
     const isElectron = /Electron/i.test(String(navigator.userAgent || ""));
     const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Rec || isElectron) {
@@ -1955,7 +2933,7 @@
     await primeAudioPlayback();
     setEnabled(!enabled);
     if (enabled) {
-      if (uiMode === "voice") startListening();
+      if (uiMode === "voice" && visCanOperateAI()) startListening();
     }
   });
 
@@ -1967,6 +2945,10 @@
     orbBtn.addEventListener("click", async function () {
       await primeAudioPlayback();
       setUIMode("voice");
+      if (!visCanOperateAI()) {
+        addLog("assistant", "Tutor: Visual identity not active yet. Look at the camera to continue.");
+        return;
+      }
       startListening();
     });
   }
@@ -1998,6 +2980,10 @@
       await primeAudioPlayback();
       setUIMode("voice");
       if (!enabled) setEnabled(true);
+      if (!visCanOperateAI()) {
+        addLog("assistant", "Tutor: Waiting for face recognition before voice mode.");
+        return;
+      }
       startListening();
     });
   }
@@ -2045,7 +3031,11 @@
     });
   }
   setUIMode("voice");
-  setEnabled(false);
+  setEnabled(true);
+  initVisualIntelligenceSystem().catch(function (e) {
+    dbg("VIS init failed", e && e.message);
+    setAssistantStateForVisOffline("Offline - VIS init failed");
+  });
   try {
     if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
   } catch (e) {}
