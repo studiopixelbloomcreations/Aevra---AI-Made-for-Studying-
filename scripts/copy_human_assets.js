@@ -26,16 +26,21 @@ function main() {
   const pkgDir = path.join(root, 'node_modules', '@vladmandic', 'human');
   const srcJs = path.join(pkgDir, 'dist', 'human.js');
   const srcModels = path.join(pkgDir, 'models');
-  const outDir = path.join(root, 'public', 'vis_human');
-  const outJs = path.join(outDir, 'human.js');
-  const outModels = path.join(outDir, 'models');
+  const outDirs = [
+    path.join(root, 'vis_human'),
+    path.join(root, 'public', 'vis_human'),
+  ];
 
   if (!fs.existsSync(pkgDir)) {
     console.log('[copy_human_assets] human package not installed');
     process.exit(0);
   }
-  if (fs.existsSync(srcJs)) copyFile(srcJs, outJs);
-  if (fs.existsSync(srcModels)) copyDir(srcModels, outModels);
+  for (const outDir of outDirs) {
+    const outJs = path.join(outDir, 'human.js');
+    const outModels = path.join(outDir, 'models');
+    if (fs.existsSync(srcJs)) copyFile(srcJs, outJs);
+    if (fs.existsSync(srcModels)) copyDir(srcModels, outModels);
+  }
   console.log('[copy_human_assets] done');
 }
 
