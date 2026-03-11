@@ -30,6 +30,24 @@ function endpoint(owner, repo, filePath) {
     .join("/")}`;
 }
 
+async function githubGetFile(token, owner, repo, branch, filePath) {
+  const url = `${endpoint(owner, repo, filePath)}?ref=${encodeURIComponent(branch)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  if (res.status === 404) return { ok: true, exists: false, sha: "", content: "" };
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: String((data && data.message) || `HTTP_${res.status}`) };
+  const raw = String((data && data.content) || "");
+  const content = raw ? Buffer.from(raw, "base64").toString("utf-8") : "";
+  return { ok: true, exists: true, sha: String(data.sha || ""), content: content };
+}
+
 async function githubGetSha(token, owner, repo, branch, filePath) {
   const url = `${endpoint(owner, repo, filePath)}?ref=${encodeURIComponent(branch)}`;
   const res = await fetch(url, {
@@ -108,11 +126,42 @@ exports.handler = async function handler(event) {
   const put = await githubPutFile(token, owner, repo, branch, filePath, content, existing.sha || "", message);
   if (!put.ok) return json(500, { ok: false, error: put.error, file_path: filePath });
 
+  const indexPath = `${basePath}/index.json`;
+  const indexFetch = await githubGetFile(token, owner, repo, branch, indexPath);
+  if (!indexFetch.ok) return json(500, { ok: false, error: indexFetch.error, file_path: indexPath });
+  let indexRows = [];
+  try {
+    const parsed = indexFetch.content ? JSON.parse(indexFetch.content) : [];
+    if (Array.isArray(parsed)) indexRows = parsed;
+  } catch (e) {
+    indexRows = [];
+  }
+  const vectorModel = String((profile.facial_signature && profile.facial_signature.signature_model) || "legacy");
+  const vector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
+    ? (vectorModel === "human-js" ? profile.facial_signature.feature_vector.slice(0) : profile.facial_signature.feature_vector.slice(0, 256))
+    : [];
+  const username = String((profile.user_identity && profile.user_identity.username) || profile.file_name || "user");
+  const updated = {
+    profileFile: requestedFile,
+    username: username,
+    vector: vector,
+    vector_model: vectorModel,
+    updated_at: new Date().toISOString(),
+  };
+  const nextIndex = indexRows.filter((row) => row && row.profileFile !== requestedFile);
+  nextIndex.push(updated);
+  const indexContent = JSON.stringify(nextIndex, null, 2) + "\n";
+  const indexSha = indexFetch.exists ? (indexFetch.sha || "") : "";
+  const indexPut = await githubPutFile(token, owner, repo, branch, indexPath, indexContent, indexSha, "vis: update index");
+  if (!indexPut.ok) return json(500, { ok: false, error: indexPut.error, file_path: indexPath });
+
   return json(200, {
     ok: true,
     storage: "github",
     file_path: filePath,
     sha: put.sha || "",
     commit_sha: put.commit_sha || "",
+    index_path: indexPath,
+    index_commit_sha: indexPut.commit_sha || "",
   });
 };

@@ -126,6 +126,10 @@
   let visAllowTestingStage = false;
   let visProfileSaveTimer = null;
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
+  const VIS_HUMAN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/@vladmandic/human/models";
+  let visHuman = null;
+  let visHumanReady = false;
+  let visHumanLoading = false;
   let visSetupState = {
     step: 1,
     agreed: false,
@@ -764,20 +768,29 @@
     const targetVector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
       ? profile.facial_signature.feature_vector
       : [];
+    const targetModel = String((profile && profile.facial_signature && profile.facial_signature.signature_model) || "legacy");
     if (!targetVector.length) {
       if (statusEl) statusEl.textContent = "Verification failed: no biometric signature found in profile.";
       visVerificationBusy = false;
       return;
     }
+    const useHuman = targetModel === "human-js";
+    if (useHuman) await ensureHumanReady();
     let stable = 0;
     let tries = 0;
     while (tries < 45) {
       tries += 1;
       await new Promise(function (resolve) { setTimeout(resolve, 140); });
-      const faces = await detectFacesFromVideo();
-      const face = faces && faces.length ? faces[0] : buildPseudoCenterFace();
-      if (!face) continue;
-      const probe = extractVisFaceVector(face);
+      let probe = [];
+      if (useHuman) {
+        const human = await getHumanEmbedding();
+        probe = human && human.embedding ? human.embedding : [];
+      } else {
+        const faces = await detectFacesFromVideo();
+        const face = faces && faces.length ? faces[0] : buildPseudoCenterFace();
+        if (!face) continue;
+        probe = extractVisFaceVector(face);
+      }
       if (!probe.length) continue;
       const score = cosineSimilarity(probe, targetVector);
       if (statusEl) statusEl.textContent = "Testing recognition... score " + score.toFixed(3);
@@ -830,6 +843,63 @@
     }
     if (ax <= 0 || by <= 0) return 0;
     return dot / (Math.sqrt(ax) * Math.sqrt(by));
+  }
+
+  async function ensureHumanReady() {
+    if (visHumanReady) return true;
+    if (visHumanLoading) return false;
+    if (!window.Human || !window.Human.Human) return false;
+    visHumanLoading = true;
+    try {
+      const config = {
+        backend: "webgl",
+        cacheSensitivity: 0,
+        modelBasePath: String(window.HUMAN_MODEL_BASE || VIS_HUMAN_MODEL_BASE),
+        face: {
+          enabled: true,
+          detector: { enabled: true },
+          mesh: { enabled: false },
+          description: { enabled: true },
+          iris: { enabled: false },
+          emotion: { enabled: false },
+        },
+        body: { enabled: false },
+        hand: { enabled: false },
+        gesture: { enabled: false },
+        object: { enabled: false },
+        segmentation: { enabled: false },
+      };
+      visHuman = new window.Human.Human(config);
+      if (visHuman.load) await visHuman.load();
+      if (visHuman.warmup) await visHuman.warmup();
+      visHumanReady = true;
+      pushVisDebug("Human.js loaded for face recognition.");
+      return true;
+    } catch (e) {
+      pushVisDebug("Human.js init failed: " + String((e && e.message) || e));
+      visHumanReady = false;
+      return false;
+    } finally {
+      visHumanLoading = false;
+    }
+  }
+
+  async function getHumanEmbedding() {
+    if (!visVideoEl) return null;
+    const ok = await ensureHumanReady();
+    if (!ok || !visHuman) return null;
+    try {
+      const result = await visHuman.detect(visVideoEl);
+      const face = result && Array.isArray(result.face) && result.face.length ? result.face[0] : null;
+      const embedding = face && Array.isArray(face.embedding) ? face.embedding : [];
+      if (!embedding.length) return null;
+      return {
+        embedding: embedding.slice(0),
+        face: face,
+      };
+    } catch (e) {
+      return null;
+    }
   }
 
   function averageVectors(vectors) {
@@ -1519,7 +1589,10 @@
     const db = getFirestoreDb();
     const au = getFirebaseAuthedUser();
     const uid = au && au.uid ? String(au.uid) : getCurrentUid();
-    if (!db || !uid) return visRecognitionIndex.slice();
+    if (!db || !uid) {
+      const fallback = await loadVisProfilesFromRepoIndex();
+      return fallback;
+    }
     visCloudLoadInFlight = true;
     try {
       const profileSnap = await db.collection("users")
@@ -1547,6 +1620,7 @@
           if (!data || !data.profile_file) return;
           const fileName = String(data.profile_file || "");
           const profile = profileMap[fileName] || null;
+          const signatureModel = String((data.vector_model) || (profile && profile.facial_signature && profile.facial_signature.signature_model) || "legacy");
           const vector = Array.isArray(data.feature_vector)
             ? data.feature_vector
             : (profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
@@ -1556,23 +1630,26 @@
           if (!vector.length && !profile) return;
           nextIndex.push({
             profileFile: fileName,
-            vector: vector.slice(0, 256),
+            vector: signatureModel === "human-js" ? vector.slice(0) : vector.slice(0, 256),
             username: String(data.username || (profile && profile.user_identity && profile.user_identity.username) || fileName),
             profile: profile,
+            vector_model: signatureModel,
           });
         });
       } else {
         Object.keys(profileMap).forEach(function (fileName) {
           const profile = profileMap[fileName];
+          const signatureModel = String((profile.facial_signature && profile.facial_signature.signature_model) || "legacy");
           const vector = profile && profile.facial_signature && Array.isArray(profile.facial_signature.feature_vector)
             ? profile.facial_signature.feature_vector
             : [];
           if (!vector.length) return;
           nextIndex.push({
             profileFile: fileName,
-            vector: vector.slice(0, 256),
+            vector: signatureModel === "human-js" ? vector.slice(0) : vector.slice(0, 256),
             username: String((profile.user_identity && profile.user_identity.username) || fileName),
             profile: profile,
+            vector_model: signatureModel,
           });
         });
       }
@@ -1582,9 +1659,47 @@
       return visRecognitionIndex.slice();
     } catch (e) {
       dbg("VIS index load failed", e && e.message);
-      return visRecognitionIndex.slice();
+      return await loadVisProfilesFromRepoIndex();
     } finally {
       visCloudLoadInFlight = false;
+    }
+  }
+
+  async function loadVisProfilesFromRepoIndex() {
+    try {
+      const res = await fetch("vis_identity_profiles/index.json", { cache: "no-store" });
+      if (!res.ok) return visRecognitionIndex.slice();
+      const data = await res.json();
+      if (!Array.isArray(data)) return visRecognitionIndex.slice();
+      visRecognitionIndex = data.map(function (row) {
+        return {
+          profileFile: String(row.profileFile || row.file_name || ""),
+          vector: Array.isArray(row.vector) ? row.vector.slice(0) : [],
+          username: String(row.username || row.profileFile || "user"),
+          profile: null,
+          vector_model: String(row.vector_model || row.signature_model || "legacy"),
+        };
+      }).filter(function (row) { return row.profileFile && row.vector.length; });
+      visIndexLoaded = true;
+      dbg("VIS index loaded (repo)", visRecognitionIndex.length);
+      return visRecognitionIndex.slice();
+    } catch (e) {
+      dbg("VIS repo index load failed", e && e.message);
+      return visRecognitionIndex.slice();
+    }
+  }
+
+  async function fetchVisProfileFromRepo(profileFile) {
+    const file = String(profileFile || "").trim();
+    if (!file) return null;
+    try {
+      const res = await fetch("vis_identity_profiles/" + encodeURIComponent(file), { cache: "no-store" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data || !data.file_name) return null;
+      return data;
+    } catch (e) {
+      return null;
     }
   }
 
@@ -1751,12 +1866,17 @@
     return { boundingBox: { x: x, y: y, width: w, height: h }, landmarks: [] };
   }
 
-  function findVisMatch(vector) {
+  function findVisMatch(vector, vectorModel) {
     const input = Array.isArray(vector) ? vector : [];
     if (!input.length || !visRecognitionIndex.length) return null;
     let best = null;
     for (let i = 0; i < visRecognitionIndex.length; i += 1) {
       const row = visRecognitionIndex[i];
+      if (vectorModel) {
+        const rowModel = String(row.vector_model || "").toLowerCase();
+        if (rowModel && rowModel !== String(vectorModel).toLowerCase()) continue;
+        if (!rowModel && String(vectorModel).toLowerCase() !== "legacy") continue;
+      }
       const score = cosineSimilarity(input, row.vector);
       if (!best || score > best.score) {
         best = {
@@ -1897,11 +2017,13 @@
     }
     const identityHints = getSignedInIdentityHints();
     const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
+    const signatureModel = String(payload.signatureModel || "legacy");
     const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
       scan_mode: visSetupState.infrared ? "infrared_assisted" : "high_precision_rgb",
       frame_count: payload.frameCount || payload.vectorsLength || 0,
       landmark_snapshots: (payload.landmarks || []).slice(0, 6),
       feature_vector: payload.avgVector,
+      signature_model: signatureModel,
       geometry_data: {
         dimensions: payload.avgVector.length,
         extraction: "48x48 grayscale block features + geometry ratios",
@@ -1913,8 +2035,9 @@
     visRecognitionIndex.push({
       profileFile: profile.file_name,
       username: profile.user_identity.username,
-      vector: payload.avgVector.slice(0, 256),
+      vector: signatureModel === "human-js" ? payload.avgVector.slice(0) : payload.avgVector.slice(0, 256),
       profile: profile,
+      vector_model: signatureModel,
     });
     pushVisDebug("Identity profile file created: " + profile.file_name);
     pushVisDebug("Identity username resolved as: " + String((profile.user_identity && profile.user_identity.username) || "unknown"));
@@ -1929,7 +2052,9 @@
     visScanning = true;
     visSetupState.step = 4;
     try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
-    pushVisDebug("Face scan started (legacy fallback).");
+    const humanReady = await ensureHumanReady();
+    const signatureModel = humanReady ? "human-js" : "legacy";
+    pushVisDebug("Face scan started (" + signatureModel + ").");
     if (!visVideoEl || !visVideoEl.srcObject || !visVideoEl.videoWidth || !visVideoEl.videoHeight) {
       const cameraReady = await ensureVisCameraReady();
       if (!cameraReady) {
@@ -1945,19 +2070,26 @@
     let usedCenterFallback = false;
     for (let i = 0; i < VIS_SCAN_FRAME_COUNT; i += 1) {
       await new Promise(function (resolve) { setTimeout(resolve, 120); });
-      const faces = await detectFacesFromVideo();
-      let face = faces && faces.length ? faces[0] : null;
-      if (!face) {
-        face = buildPseudoCenterFace();
-        if (face) usedCenterFallback = true;
-      }
-      if (!face) continue;
-      const vector = extractVisFaceVector(face);
-      if (vector.length) vectors.push(vector);
-      if (face.landmarks && Array.isArray(face.landmarks)) {
-        landmarks.push(face.landmarks.map(function (p) {
-          return { x: Number(p.x || 0), y: Number(p.y || 0), type: String(p.type || "") };
-        }));
+      if (humanReady) {
+        const human = await getHumanEmbedding();
+        if (human && human.embedding && human.embedding.length) {
+          vectors.push(human.embedding);
+        }
+      } else {
+        const faces = await detectFacesFromVideo();
+        let face = faces && faces.length ? faces[0] : null;
+        if (!face) {
+          face = buildPseudoCenterFace();
+          if (face) usedCenterFallback = true;
+        }
+        if (!face) continue;
+        const vector = extractVisFaceVector(face);
+        if (vector.length) vectors.push(vector);
+        if (face.landmarks && Array.isArray(face.landmarks)) {
+          landmarks.push(face.landmarks.map(function (p) {
+            return { x: Number(p.x || 0), y: Number(p.y || 0), type: String(p.type || "") };
+          }));
+        }
       }
       const bar = visSetupEl ? visSetupEl.querySelector(".pi-vis-progress-bar") : null;
       if (bar) bar.style.width = Math.min(100, Math.round(((i + 1) / VIS_SCAN_FRAME_COUNT) * 100)) + "%";
@@ -1981,6 +2113,7 @@
       landmarks: landmarks.slice(0, 12),
       frameCount: vectors.length,
       vectorsLength: vectors.length,
+      signatureModel: signatureModel,
     };
     visSetupState.step = 5;
     renderVisSetup();
@@ -2025,12 +2158,25 @@
         setAssistantStateForVisOffline("Offline - no visual identity on record");
         return;
       }
-      const vector = extractVisFaceVector(faces[0]);
-      if (!vector.length) {
-        if (!visOffline) pauseForVisOffline("Offline - no face");
-        return;
+      const useHuman = await ensureHumanReady();
+      let vector = [];
+      let vectorModel = "legacy";
+      let match = null;
+      if (useHuman) {
+        const human = await getHumanEmbedding();
+        vector = human && human.embedding ? human.embedding : [];
+        vectorModel = "human-js";
+        if (vector.length) match = findVisMatch(vector, vectorModel);
       }
-      const match = findVisMatch(vector);
+      if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
+        vector = extractVisFaceVector(faces[0]);
+        vectorModel = "legacy";
+        if (!vector.length) {
+          if (!visOffline) pauseForVisOffline("Offline - no face");
+          return;
+        }
+        match = findVisMatch(vector, vectorModel);
+      }
       if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
         visNoMatchCount += 1;
         if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {
@@ -2051,14 +2197,16 @@
       }
       const activeFile = visActiveProfile && visActiveProfile.file_name ? String(visActiveProfile.file_name) : "";
       if (activeFile !== match.profileFile) {
-        const profile = match.profile || null;
-        if (profile) {
-          await switchToVisProfile(profile);
-        } else {
+        let profile = match.profile || null;
+        if (!profile) {
           await loadVisProfilesFromCloud();
           const hit = visRecognitionIndex.find(function (r) { return r.profileFile === match.profileFile; });
-          if (hit && hit.profile) await switchToVisProfile(hit.profile);
+          profile = hit && hit.profile ? hit.profile : null;
         }
+        if (!profile) {
+          profile = await fetchVisProfileFromRepo(match.profileFile);
+        }
+        if (profile) await switchToVisProfile(profile);
       } else {
         if (visOffline) await resumeFromVisOnline();
         if (visActiveProfile) ensureVisPersonalAgent(visActiveProfile, "recognition");
