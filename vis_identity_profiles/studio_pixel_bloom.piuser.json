@@ -113,7 +113,18 @@
   },
   "conversation_memory": {
     "history": [],
-    "important_facts": {}
+    "important_facts": {
+      "preferred_name": "Thenuja",
+      "full_name": "Thenuja Premasiri",
+      "interests": "Robotics",
+      "favorite_subjects": "ICT",
+      "goals": "Improve grades",
+      "learning_style": "step by step",
+      "preferred_tone": "energetic",
+      "hobbies": "gaming",
+      "timezone_or_city": "Kurunegala",
+      "preferred_language": "English"
+    }
   },
   "learned_preferences": {
     "preferred_name": "Thenuja",
@@ -135,11 +146,11 @@
     "humor_professional_balance": "balanced"
   },
   "session_state": {
-    "paused": true,
-    "assistant_state": "idle",
+    "paused": false,
+    "assistant_state": "listening",
     "pending_messages": [],
     "pending_response": null,
-    "last_active_timestamp": "2026-03-11T12:21:08.113Z",
+    "last_active_timestamp": "2026-03-11T12:22:04.018Z",
     "speech_state": {
       "active": false,
       "text": "",
