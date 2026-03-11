@@ -151,7 +151,7 @@
     "assistant_state": "idle",
     "pending_messages": [],
     "pending_response": null,
-    "last_active_timestamp": "2026-03-11T11:57:19.945Z",
+    "last_active_timestamp": "2026-03-11T11:57:21.986Z",
     "speech_state": {
       "active": false,
       "text": "",
@@ -160,8 +160,8 @@
     },
     "user_instance": {
       "profile_file": "studio_pixel_bloom.piuser.json",
-      "runtime_key": "vis_instance_studio_pixel_bloom.piuser.json_mmlzfk4g",
-      "loaded_at": "2026-03-11T11:55:23.680Z"
+      "runtime_key": "vis_instance_studio_pixel_bloom.piuser.json_mmlzi2xt",
+      "loaded_at": "2026-03-11T11:57:21.377Z"
     }
   },
   "personal_intelligence_agent": {
