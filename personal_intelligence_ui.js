@@ -126,7 +126,7 @@
   let visAllowTestingStage = false;
   let visProfileSaveTimer = null;
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
-  const VIS_HUMAN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/@vladmandic/human/models";
+  const VIS_HUMAN_MODEL_BASE = "vis_human/models";
   let visHuman = null;
   let visHumanReady = false;
   let visHumanLoading = false;

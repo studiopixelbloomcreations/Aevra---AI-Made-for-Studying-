@@ -1,6 +1,6 @@
 [build]
   publish = "."
-  command = ""
+  command = "npm install --no-audit --no-fund && npm run prepare:human"
 
 [functions]
   directory = "netlify/functions"
