@@ -523,6 +523,7 @@
     if (visTestEl && !visTestEl.hidden) return false;
     if (visPersonalizeOpen) return false;
     pushVisDebug("Opening first-run setup (" + String(reason || "bootstrap") + ").");
+    setAssistantStateForVisOffline("Setup required - no profile found");
     openVisSetup();
     return true;
   }
@@ -564,6 +565,7 @@
       profile: profile || null,
       answers: {},
     };
+    setAssistantStateForVisOffline("Personalization required");
     panel.classList.add("pi-vis-personalize-open");
     visPersonalizeEl.hidden = false;
     renderVisPersonalize();
@@ -749,7 +751,12 @@
         visPersonalizeState.loading = false;
         closeVisPersonalize();
         if (profile) {
-          switchToVisProfile(profile);
+          switchToVisProfile(profile).then(function () {
+            // Force a quick rescan to confirm identity and resume.
+            visRecognitionCandidate = { profileFile: "", count: 0 };
+            visNoMatchCount = 0;
+            setTimeout(function () { processVisFrame(); }, 400);
+          });
         }
       });
     }, 1200);
@@ -793,6 +800,14 @@
         if (activateBtn) activateBtn.hidden = false;
         visVerificationBusy = false;
         visAllowTestingStage = false;
+        // Auto-activate within 1s to keep flow moving.
+        setTimeout(function () {
+          if (!profile) return;
+          closeVisTestStage();
+          switchToVisProfile(profile).then(function () {
+            ensureVisPersonalAgent(profile, "post_test_auto");
+          });
+        }, 900);
         return;
       }
     }
@@ -1829,6 +1844,7 @@
     if (visSetupOpen) return;
     visSetupOpen = true;
     visSetupState = Object.assign({}, visSetupState, { step: 1, agreed: false });
+    setAssistantStateForVisOffline("Setup required - enroll visual identity");
     panel.classList.add("pi-vis-setup-open");
     if (visSetupEl) visSetupEl.hidden = false;
     try {
@@ -1856,7 +1872,8 @@
         '<p>Visual Intelligence uses facial recognition to identify you and load your personalized AI profile.</p>' +
         '<p>The system will scan your facial structure and generate a secure biometric identity signature.</p>' +
         '<label class="pi-vis-field">Username for identity file<input class="pi-vis-input" data-vis="username" type="text" value="' + String(visSetupState.username || "") + '" /></label>' +
-        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn" data-vis-action="continue">Continue</button></div>';
+        '<div class="pi-vis-actions"><button type="button" class="pi-vis-btn" data-vis-action="continue">Continue</button></div>' +
+        '<div class="pi-vis-note">Enrollment flow will complete in under 15 seconds once you proceed.</div>';
     } else if (visSetupState.step === 2) {
       body.innerHTML =
         '<p>User agreement and privacy confirmation:</p>' +
