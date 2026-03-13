@@ -6,6 +6,8 @@
   "author": "Tutor AI Team",
   "main": "desktop/main.js",
   "scripts": {
+    "postinstall": "node scripts/copy_human_assets.js",
+    "prepare:human": "node scripts/copy_human_assets.js",
     "desktop": "electron .",
     "desktop:url": "set APP_START_URL=https://tutorv4.netlify.app/&& electron .",
     "cloud-sync:watch": "node cloud_sync/run_monitor.js",
@@ -21,6 +23,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@vladmandic/human": "^3.3.6",
     "@vitejs/plugin-react": "^5.1.2",
     "axios": "^1.6.0",
     "canvas-confetti": "^1.9.4",
