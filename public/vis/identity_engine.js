@@ -10,12 +10,19 @@
     try { localStorage.setItem(LOCAL_KEY, JSON.stringify(list || [])); } catch {}
   }
 
+  function normalizeIndex(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (raw.profiles && Array.isArray(raw.profiles)) return raw.profiles;
+    return [];
+  }
+
   VIS.identityEngine = {
     async loadProfiles() {
       let index = [];
       try {
         const res = await fetch('/vis_profiles/index.json', { cache: 'no-store' });
-        if (res.ok) index = await res.json();
+        if (res.ok) index = normalizeIndex(await res.json());
       } catch {}
       const local = loadLocal();
       const merged = [...index, ...local];
