@@ -129,6 +129,7 @@
   let visVerificationProfile = null;
   let visAllowTestingStage = false;
   let visProfileSaveTimer = null;
+  let visExpectedProfileFile = "";
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
   const VIS_HUMAN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/";
   let visHuman = null;
@@ -424,6 +425,26 @@
       .replace(/_+/g, "_")
       .replace(/^_+|_+$/g, "")
       .slice(0, 60);
+  }
+
+  function updateVisExpectedProfile() {
+    const hints = getSignedInIdentityHints();
+    const username = sanitizeVisUsername(hints.username || "");
+    if (!username || !Array.isArray(visRecognitionIndex)) {
+      visExpectedProfileFile = "";
+      return "";
+    }
+    const fileCandidate = username + VIS_PROFILE_EXTENSION;
+    let match = visRecognitionIndex.find(function (r) {
+      return r && (String(r.profileFile || "") === fileCandidate || String(r.username || "") === username);
+    });
+    if (!match) {
+      match = visRecognitionIndex.find(function (r) {
+        return r && String(r.profileFile || "").toLowerCase().startsWith(username);
+      });
+    }
+    visExpectedProfileFile = match ? String(match.profileFile || "") : "";
+    return visExpectedProfileFile;
   }
 
   function buildVisSystemUserId() {
@@ -899,6 +920,33 @@
         reject(e);
       }
     });
+  }
+
+  function ensureVisWelcomeStyles() {
+    if (document.getElementById("piVisWelcomeStyle")) return;
+    const style = document.createElement("style");
+    style.id = "piVisWelcomeStyle";
+    style.textContent =
+      ".pi-vis-welcome{position:fixed;top:86px;right:22px;z-index:9999;background:rgba(9,18,36,0.9);color:#e9f2ff;padding:12px 18px;border-radius:12px;border:1px solid rgba(120,180,255,0.35);box-shadow:0 14px 40px rgba(2,8,23,0.45);font-size:14px;letter-spacing:.2px;opacity:0;transform:translateY(-8px);transition:opacity 2s ease,transform 0.4s ease;}"+
+      ".pi-vis-welcome.pi-show{opacity:1;transform:translateY(0);}"+
+      ".pi-vis-welcome.pi-fade{opacity:0;}";
+    document.head.appendChild(style);
+  }
+
+  function showVisWelcome(name) {
+    const label = String(name || visLastKnownUserLabel || "User");
+    ensureVisWelcomeStyles();
+    const existing = document.querySelector(".pi-vis-welcome");
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    const toast = document.createElement("div");
+    toast.className = "pi-vis-welcome";
+    toast.textContent = "Welcome " + label + ".";
+    document.body.appendChild(toast);
+    setTimeout(function () { toast.classList.add("pi-show"); }, 20);
+    setTimeout(function () { toast.classList.add("pi-fade"); }, 3000);
+    setTimeout(function () {
+      if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 5000);
   }
 
   async function ensureHumanScriptLoaded() {
@@ -1929,6 +1977,7 @@
         if (Array.isArray(repoFallback) && repoFallback.length) {
           visRecognitionIndex = repoFallback.slice();
           visIndexLoaded = true;
+          updateVisExpectedProfile();
           dbg("VIS index loaded (repo fallback)", visRecognitionIndex.length);
           return visRecognitionIndex.slice();
         }
@@ -1945,6 +1994,7 @@
       }
       visRecognitionIndex = nextIndex;
       visIndexLoaded = true;
+      updateVisExpectedProfile();
       dbg("VIS index loaded", visRecognitionIndex.length);
       return visRecognitionIndex.slice();
     } catch (e) {
@@ -1971,6 +2021,7 @@
         };
       }).filter(function (row) { return row.profileFile && row.vector.length; });
       visIndexLoaded = true;
+      updateVisExpectedProfile();
       dbg("VIS index loaded (repo)", visRecognitionIndex.length);
       return visRecognitionIndex.slice();
     } catch (e) {
@@ -2070,6 +2121,7 @@
     if (currentFile && currentFile !== nextFile) await persistActiveVisProfileNow();
     applyVisProfileToRuntime(profile);
     setVisOfflineState(false, "Online - " + visLastKnownUserLabel);
+    showVisWelcome(visLastKnownUserLabel);
     if (visActiveProfile) {
       visActiveProfile.session_state = Object.assign({}, visActiveProfile.session_state || {}, {
         paused: false,
@@ -2415,14 +2467,18 @@
       return;
     }
     const match = findVisMatch(vector, "human-js");
-    if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
-      visNoMatchCount += 1;
-      if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {
-        setAssistantStateForVisOffline("Offline - unrecognized face");
-        if (!visSetupOpen && !visPersonalizeOpen) openVisSetup();
+      if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
+        visNoMatchCount += 1;
+        if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {
+          if (visExpectedProfileFile) {
+            setAssistantStateForVisOffline("Recognizing user...");
+          } else {
+            setAssistantStateForVisOffline("Offline - unrecognized face");
+            if (!visSetupOpen && !visPersonalizeOpen) openVisSetup();
+          }
+        }
+        return;
       }
-      return;
-    }
     visNoMatchCount = 0;
     if (visRecognitionCandidate.profileFile === match.profileFile) {
       visRecognitionCandidate.count += 1;
