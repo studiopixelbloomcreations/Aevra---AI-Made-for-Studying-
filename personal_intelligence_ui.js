@@ -517,7 +517,6 @@
     if (!visIndexLoaded) return false;
     const hasProfiles = Array.isArray(visRecognitionIndex) && visRecognitionIndex.length > 0;
     if (hasProfiles) return false;
-    if (!visFacePresent) return false;
     if (visSetupOpen) return false;
     if (visVerificationBusy) return false;
     if (visTestEl && !visTestEl.hidden) return false;
@@ -2043,7 +2042,8 @@
     try {
       if (!visIndexLoaded) await loadVisProfilesFromCloud();
       if (Array.isArray(visRecognitionIndex) && visRecognitionIndex.length === 0) {
-        maybeOpenVisSetupForFirstRun("no_index");
+        if (!visSetupOpen) openVisSetup();
+        else maybeOpenVisSetupForFirstRun("no_index");
         setAssistantStateForVisOffline("Offline - no visual identity on record");
         return;
       }
