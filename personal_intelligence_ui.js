@@ -1924,6 +1924,25 @@
           });
         });
       }
+      if (!nextIndex.length) {
+        const repoFallback = await loadVisProfilesFromRepoIndex();
+        if (Array.isArray(repoFallback) && repoFallback.length) {
+          visRecognitionIndex = repoFallback.slice();
+          visIndexLoaded = true;
+          dbg("VIS index loaded (repo fallback)", visRecognitionIndex.length);
+          return visRecognitionIndex.slice();
+        }
+      }
+      if (nextIndex.length) {
+        // Merge repo entries not present in cloud to avoid empty index after deploy.
+        const repoEntries = await loadVisProfilesFromRepoIndex();
+        if (Array.isArray(repoEntries) && repoEntries.length) {
+          const existing = new Set(nextIndex.map(function (r) { return r.profileFile; }));
+          repoEntries.forEach(function (r) {
+            if (r && r.profileFile && !existing.has(r.profileFile)) nextIndex.push(r);
+          });
+        }
+      }
       visRecognitionIndex = nextIndex;
       visIndexLoaded = true;
       dbg("VIS index loaded", visRecognitionIndex.length);
