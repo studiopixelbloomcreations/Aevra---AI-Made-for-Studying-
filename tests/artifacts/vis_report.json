@@ -4,11 +4,11 @@
   "metrics": {
     "timings": {
       "model_load_time_ms": 0,
-      "camera_start_time_ms": 126.09999999962747,
-      "face_detection_last_ms": 0.2999999998137355,
-      "verification_start_ms": 697.1000000005588,
-      "identity_match_time_ms": 1.1000000005587935,
-      "total_verification_time_ms": 312.79999999981374
+      "camera_start_time_ms": 451,
+      "face_detection_last_ms": 0.7000000001862645,
+      "verification_start_ms": 1269.2999999998137,
+      "identity_match_time_ms": 0.39999999944120646,
+      "total_verification_time_ms": 308.20000000018626
     },
     "counters": {
       "camera_init_attempts": 2,
@@ -18,69 +18,69 @@
       {
         "type": "vis_start",
         "data": null,
-        "at": 1773479620447
+        "at": 1773479947664
       },
       {
         "type": "timing",
         "name": "model_load_time_ms",
-        "value": 0.09999999962747097,
-        "at": 1773479620447
+        "value": 0.2999999998137355,
+        "at": 1773479947665
       },
       {
         "type": "vis_start",
         "data": null,
-        "at": 1773479620449
+        "at": 1773479947667
       },
       {
         "type": "timing",
         "name": "model_load_time_ms",
         "value": 0,
-        "at": 1773479620449
+        "at": 1773479947667
       },
       {
         "type": "timing",
         "name": "camera_start_time_ms",
-        "value": 122.19999999925494,
-        "at": 1773479620571
+        "value": 450.09999999962747,
+        "at": 1773479948116
       },
       {
         "type": "timing",
         "name": "camera_start_time_ms",
-        "value": 126.09999999962747,
-        "at": 1773479620574
+        "value": 451,
+        "at": 1773479948119
       },
       {
         "type": "profiles_loaded",
         "data": {
           "count": 1
         },
-        "at": 1773479620591
+        "at": 1773479948146
       },
       {
         "type": "verification_started",
         "data": null,
-        "at": 1773479620593
+        "at": 1773479948149
       },
       {
         "type": "profiles_loaded",
         "data": {
           "count": 1
         },
-        "at": 1773479620595
+        "at": 1773479948152
       },
       {
         "type": "timing",
         "name": "total_verification_time_ms",
-        "value": 312.79999999981374,
-        "at": 1773479620906
+        "value": 308.20000000018626,
+        "at": 1773479948457
       },
       {
         "type": "verification_complete",
         "data": {
           "user": "test_user",
-          "total_ms": 312.79999999981374
+          "total_ms": 308.20000000018626
         },
-        "at": 1773479620909
+        "at": 1773479948459
       }
     ]
   },
@@ -123,15 +123,15 @@
     },
     {
       "type": "log",
-      "text": "[VIS_METRIC] camera_start_time_ms: 122ms"
+      "text": "[VIS_METRIC] camera_start_time_ms: 450ms"
     },
     {
       "type": "log",
-      "text": "[VIS_METRIC] camera_start_time_ms: 126ms"
+      "text": "[VIS_METRIC] camera_start_time_ms: 451ms"
     },
     {
       "type": "log",
-      "text": "[VIS_METRIC] total_verification_time_ms: 313ms"
+      "text": "[VIS_METRIC] total_verification_time_ms: 308ms"
     }
   ],
   "pageErrors": [],

@@ -1072,7 +1072,10 @@
       const faces = result && Array.isArray(result.face) ? result.face.slice(0) : [];
       return { faces: faces, result: result || null };
     } catch (e) {
-      if (visHuman.tf && visHuman.tf.engine && visHuman.tf.engine().endScope) { try { visHuman.tf.engine().endScope(); } catch(_){} }
+      console.warn('[VIS] getHumanDetections error (WebGL may have crashed):', e && e.message);
+      if (visHuman && visHuman.tf && visHuman.tf.engine && visHuman.tf.engine().endScope) { try { visHuman.tf.engine().endScope(); } catch(_){} }
+      window.__visHuman = null;
+      window.__visHumanInitFailed = true;
       return { faces: [], result: null };
     } finally {
       window.__visDetectBusy = false;

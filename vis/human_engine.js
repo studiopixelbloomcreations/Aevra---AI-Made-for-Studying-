@@ -95,8 +95,11 @@ export async function detectFace(video) {
     const face = result && result.face && result.face[0] ? result.face[0] : null;
     return { result, face };
   } catch (detectErr) {
-    console.warn('[VIS] human.detect error:', detectErr && detectErr.message);
+    console.warn('[VIS] human.detect error (WebGL may have crashed):', detectErr && detectErr.message);
     try { if (human.tf && human.tf.engine && human.tf.engine().endScope) human.tf.engine().endScope(); } catch (_) {}
+    // Trigger recovery: destroy corrupted instance so it reinitializes on next frame
+    window.__visHuman = null;
+    window.__visHumanInitFailed = true; // Tell UI to use fallback
     return { result: null, face: null };
   } finally {
     window.__visDetectBusy = false;
