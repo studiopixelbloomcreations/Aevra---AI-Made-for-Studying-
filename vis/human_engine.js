@@ -36,22 +36,12 @@ function markHumanFailure(err) {
 async function loadHuman(humanConfig) {
   const human = new window.Human.Human(humanConfig);
   if (human.load) await human.load();
-  // Clean up after load() — it re-registers backends internally
-  // WebGL/WebGPU are blocked at browser API level (app.html) so this is safe
+  // Ensure backend is set to cpu
   if (human.tf) {
-    try { if (human.tf.removeBackend) human.tf.removeBackend('webgl'); } catch (_) {}
-    try { if (human.tf.removeBackend) human.tf.removeBackend('webgpu'); } catch (_) {}
-    try { await human.tf.setBackend('wasm'); } catch (_) {}
+    try { await human.tf.setBackend('cpu'); } catch (_) {}
     try { await human.tf.ready(); } catch (_) {}
   }
   if (!human.tf) throw new Error('Human.js TF backend missing');
-  if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
-    try { await human.tf.setBackend('wasm'); } catch (_) {}
-    try { await human.tf.ready(); } catch (_) {}
-  }
-  if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
-    throw new Error('Human.js backend not ready (wasm)');
-  }
   return human;
 }
 
@@ -61,8 +51,7 @@ export async function initHuman() {
   if (!window.Human || !window.Human.Human) throw new Error('Human.js not loaded');
 
   const humanConfig = {
-    backend: 'wasm', // Force wasm to avoid WebGL context crashes
-    wasmPath: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/',
+    backend: 'cpu', // Use CPU backend to avoid WebGL/WebGPU issues
     modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/',
     cacheModels: true,
     face: {
@@ -81,7 +70,7 @@ export async function initHuman() {
     human = await loadHuman(humanConfig);
   } catch (err) {
     try {
-      const fallbackConfig = Object.assign({}, humanConfig, { backend: 'wasm' });
+      const fallbackConfig = Object.assign({}, humanConfig, { backend: 'cpu' });
       human = await loadHuman(fallbackConfig);
     } catch (fallbackErr) {
       markHumanFailure(fallbackErr || err);
@@ -100,7 +89,7 @@ export async function detectFace(video) {
     return { result: { face: [face] }, face };
   }
   const human = await initHuman();
-  if (!human || !human.tf || (human.tf.getBackend && human.tf.getBackend() !== 'wasm')) {
+  if (!human || !human.tf) {
     window.__visHuman = null;
     window.__visHumanInitFailed = true;
     return { result: null, face: null };

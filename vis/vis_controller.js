@@ -202,6 +202,11 @@ export async function startVIS() {
   recordEvent('vis_start');
   const modelStart = nowMs();
   await initHuman();
+  if (!window.__visHuman) {
+    console.warn('[VIS] Human init failed, disabling VIS');
+    recordEvent('vis_disabled', { reason: 'human_init_failed' });
+    return;
+  }
   recordTiming('model_load_time_ms', nowMs() - modelStart);
   const cameraStart = nowMs();
   const video = await initCamera();
