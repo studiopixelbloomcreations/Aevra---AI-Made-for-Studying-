@@ -35,15 +35,15 @@ function markHumanFailure(err) {
 
 async function loadHuman(humanConfig) {
   const human = new window.Human.Human(humanConfig);
-  // WebGL is blocked at canvas level (app.html), so removeBackend is safe
-  // (no WebGL tensors exist to be disposed)
+  if (human.load) await human.load();
+  // Clean up after load() — it re-registers backends internally
+  // WebGL/WebGPU are blocked at browser API level (app.html) so this is safe
   if (human.tf) {
     try { if (human.tf.removeBackend) human.tf.removeBackend('webgl'); } catch (_) {}
     try { if (human.tf.removeBackend) human.tf.removeBackend('webgpu'); } catch (_) {}
     try { await human.tf.setBackend('wasm'); } catch (_) {}
     try { await human.tf.ready(); } catch (_) {}
   }
-  if (human.load) await human.load();
   return human;
 }
 

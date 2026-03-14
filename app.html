@@ -556,13 +556,15 @@
   </div>
 
   <script>
-    // Block ALL WebGL context creation (HTMLCanvasElement + OffscreenCanvas)
+    // Block ALL GPU context creation: WebGL + WebGPU
     (function() {
+      // Block WebGL on HTMLCanvasElement
       var origGetContext = HTMLCanvasElement.prototype.getContext;
       HTMLCanvasElement.prototype.getContext = function(type) {
         if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') return null;
         return origGetContext.apply(this, arguments);
       };
+      // Block WebGL on OffscreenCanvas
       if (typeof OffscreenCanvas !== 'undefined') {
         var origOSGetContext = OffscreenCanvas.prototype.getContext;
         OffscreenCanvas.prototype.getContext = function(type) {
@@ -570,7 +572,8 @@
           return origOSGetContext.apply(this, arguments);
         };
       }
-      // Also block WebGL2RenderingContext availability check
+      // Block WebGPU — Human.js falls back to WebGPU if WebGL is blocked
+      try { Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }); } catch(_){}
       try { Object.defineProperty(window, 'WebGL2RenderingContext', { value: undefined, writable: false }); } catch(_){}
     })();
     // Suppress Human.js/TF unhandled promise rejections
