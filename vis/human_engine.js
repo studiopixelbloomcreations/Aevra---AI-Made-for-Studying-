@@ -35,15 +35,15 @@ function markHumanFailure(err) {
 
 async function loadHuman(humanConfig) {
   const human = new window.Human.Human(humanConfig);
-  // Tell TensorFlow that WebGL is not available — prevents kernel dispatch
-  // to GPU without disposing tensors (removeBackend causes Tensor is disposed)
-  if (human.tf && human.tf.env) {
-    try { human.tf.env().set('WEBGL_VERSION', 0); } catch (_) {}
-    try { human.tf.env().set('WEBGL_FORCE_F16_TEXTURES', false); } catch (_) {}
-    try { human.tf.env().set('WEBGL_PACK', false); } catch (_) {}
+  // WebGL is blocked at canvas level (app.html), so removeBackend is safe
+  // (no WebGL tensors exist to be disposed)
+  if (human.tf) {
+    try { if (human.tf.removeBackend) human.tf.removeBackend('webgl'); } catch (_) {}
+    try { if (human.tf.removeBackend) human.tf.removeBackend('webgpu'); } catch (_) {}
+    try { await human.tf.setBackend('wasm'); } catch (_) {}
+    try { await human.tf.ready(); } catch (_) {}
   }
   if (human.load) await human.load();
-  // Skip warmup — it can trigger backend operations that crash
   return human;
 }
 
