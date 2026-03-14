@@ -42,6 +42,14 @@ async function loadHuman(humanConfig) {
     try { await human.tf.setBackend('wasm'); } catch (_) {}
     try { await human.tf.ready(); } catch (_) {}
   }
+  if (!human.tf) throw new Error('Human.js TF backend missing');
+  if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
+    try { await human.tf.setBackend('wasm'); } catch (_) {}
+    try { await human.tf.ready(); } catch (_) {}
+  }
+  if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
+    throw new Error('Human.js backend not ready (wasm)');
+  }
   return human;
 }
 
@@ -90,7 +98,11 @@ export async function detectFace(video) {
     return { result: { face: [face] }, face };
   }
   const human = await initHuman();
-  if (!human) return { result: null, face: null };
+  if (!human || !human.tf || (human.tf.getBackend && human.tf.getBackend() !== 'wasm')) {
+    window.__visHuman = null;
+    window.__visHumanInitFailed = true;
+    return { result: null, face: null };
+  }
   // Check AND acquire lock synchronously to avoid async race condition
   if (window.__visDetectBusy) return { result: null, face: null };
   window.__visDetectBusy = true;

@@ -573,7 +573,23 @@
         };
       }
       // Block WebGPU — Human.js falls back to WebGPU if WebGL is blocked
-      try { Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }); } catch(_){}
+      // Provide a safe stub to avoid WebGPU backend crashes in TFJS/Human.js
+      try {
+        Object.defineProperty(navigator, 'gpu', {
+          value: {
+            requestAdapter: function() { return Promise.resolve(null); },
+            getPreferredCanvasFormat: function() { return null; }
+          },
+          configurable: true
+        });
+      } catch(_) {
+        try {
+          navigator.gpu = {
+            requestAdapter: function() { return Promise.resolve(null); },
+            getPreferredCanvasFormat: function() { return null; }
+          };
+        } catch(__) {}
+      }
       try { Object.defineProperty(window, 'WebGL2RenderingContext', { value: undefined, writable: false }); } catch(_){}
       
       // INTERCEPT FETCH: Human.js ignores wasmPath and tries to load WASM from its own CDN path (404)

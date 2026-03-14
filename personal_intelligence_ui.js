@@ -1029,6 +1029,18 @@
       };
       const human = new window.Human.Human(cfg);
       if (human.load) await human.load();
+      if (!human.tf) throw new Error("Human.js TF backend missing");
+      try { if (human.tf.removeBackend) human.tf.removeBackend('webgl'); } catch (_) {}
+      try { if (human.tf.removeBackend) human.tf.removeBackend('webgpu'); } catch (_) {}
+      try { await human.tf.setBackend('wasm'); } catch (_) {}
+      try { await human.tf.ready(); } catch (_) {}
+      if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
+        try { await human.tf.setBackend('wasm'); } catch (_) {}
+        try { await human.tf.ready(); } catch (_) {}
+      }
+      if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
+        throw new Error("Human.js backend not ready (wasm)");
+      }
       visHuman = human;
       window.__visHuman = human;
       visHumanReady = true;
@@ -1061,6 +1073,12 @@
     if (!visVideoEl) return { faces: [], result: null };
     const ok = await ensureHumanReady();
     if (!ok || !visHuman) return { faces: [], result: null };
+    if (!visHuman.tf || (visHuman.tf.getBackend && visHuman.tf.getBackend() !== 'wasm')) {
+      window.__visHuman = null;
+      window.__visHumanInitFailed = true;
+      pushVisDebug("Human.js backend not ready; skipping detection.");
+      return { faces: [], result: null };
+    }
     // Skip if another detect call is in progress (vis_controller or us)
     if (window.__visDetectBusy) return { faces: [], result: null };
     window.__visDetectBusy = true;
