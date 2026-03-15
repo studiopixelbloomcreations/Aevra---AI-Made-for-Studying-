@@ -63,13 +63,16 @@ async function ensureMediapipeReady() {
   return mpReadyPromise;
 }
 
-function captureFaceCrop(video, box) {
-  if (!video || !video.videoWidth || !video.videoHeight) return null;
+function captureFaceCrop(source, box) {
+  if (!source) return null;
+  const sw = source.videoWidth || source.width || 0;
+  const sh = source.videoHeight || source.height || 0;
+  if (!sw || !sh) return null;
   if (!box) return null;
   const canvas = window.__visCaptureCanvas || document.createElement('canvas');
   window.__visCaptureCanvas = canvas;
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+  const vw = sw;
+  const vh = sh;
   const x = Math.max(0, Math.min(vw - 1, box.x));
   const y = Math.max(0, Math.min(vh - 1, box.y));
   const w = Math.max(1, Math.min(vw - x, box.width));
@@ -80,7 +83,23 @@ function captureFaceCrop(video, box) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   try {
-    ctx.drawImage(video, x, y, w, h, 0, 0, target, target);
+    ctx.drawImage(source, x, y, w, h, 0, 0, target, target);
+    return canvas;
+  } catch (_) {
+    return null;
+  }
+}
+
+function captureFrame(video) {
+  if (!video || !video.videoWidth || !video.videoHeight) return null;
+  const canvas = window.__visFrameCanvas || document.createElement('canvas');
+  window.__visFrameCanvas = canvas;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas;
   } catch (_) {
     return null;
@@ -188,14 +207,16 @@ export async function detectFace(video) {
     await ensureMediapipeReady();
     if (!mpImageEmbedder || !mpFaceLandmarker) return { result: null, face: null };
     const ts = (window.performance && performance.now) ? performance.now() : Date.now();
-    const landmarkerResult = mpFaceLandmarker.detectForVideo(video, ts);
+    const frame = captureFrame(video);
+    if (!frame) return { result: { face: [] }, face: null };
+    const landmarkerResult = mpFaceLandmarker.detectForVideo(frame, ts);
     const landmarks = landmarkerResult && landmarkerResult.faceLandmarks && landmarkerResult.faceLandmarks[0]
       ? landmarkerResult.faceLandmarks[0]
       : null;
     if (!landmarks || !landmarks.length) return { result: { face: [] }, face: null };
-    const bbox = boxFromLandmarks(landmarks, video.videoWidth || 0, video.videoHeight || 0);
+    const bbox = boxFromLandmarks(landmarks, frame.width || 0, frame.height || 0);
     if (!bbox) return { result: { face: [] }, face: null };
-    const crop = captureFaceCrop(video, bbox);
+    const crop = captureFaceCrop(frame, bbox);
     if (!crop) return { result: { face: [] }, face: null };
     const embedResult = mpImageEmbedder.embedForVideo(crop, ts);
     const embedding = extractEmbedding(embedResult);

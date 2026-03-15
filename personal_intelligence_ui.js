@@ -1031,12 +1031,12 @@
     visDetectBusy = true;
     try {
       const ts = (window.performance && performance.now) ? performance.now() : Date.now();
-      const landmarkerResult = visMpFaceLandmarker.detectForVideo(visVideoEl, ts);
+      const landmarkerResult = visMpFaceLandmarker.detectForVideo(sourceCanvas, ts);
       const landmarks = landmarkerResult && landmarkerResult.faceLandmarks && landmarkerResult.faceLandmarks[0]
         ? landmarkerResult.faceLandmarks[0]
         : null;
       if (!landmarks || !landmarks.length) return { faces: [], result: landmarkerResult || null };
-      const box = boxFromLandmarks(landmarks, visVideoEl.videoWidth || 0, visVideoEl.videoHeight || 0);
+      const box = boxFromLandmarks(landmarks, sourceCanvas.width || 0, sourceCanvas.height || 0);
       if (!box) return { faces: [], result: landmarkerResult || null };
       const crop = getFaceCropCanvas(sourceCanvas, box);
       if (!crop) return { faces: [], result: landmarkerResult || null };
@@ -1267,7 +1267,17 @@
   function getHumanDetectionSource() {
     if (!visVideoEl) return null;
     if (!visVideoEl.videoWidth || !visVideoEl.videoHeight) return null;
-    return visVideoEl;
+    const canvas = visCanvasEl || document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    canvas.width = visVideoEl.videoWidth;
+    canvas.height = visVideoEl.videoHeight;
+    try {
+      ctx.drawImage(visVideoEl, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } catch (e) {
+      return null;
+    }
   }
 
   function waitForVideoReady(videoEl, timeoutMs) {
