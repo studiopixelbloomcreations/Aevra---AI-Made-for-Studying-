@@ -36,12 +36,6 @@ function markHumanFailure(err) {
 async function loadHuman(humanConfig) {
   const human = new window.Human.Human(humanConfig);
   if (human.load) await human.load();
-  // Ensure backend is set to cpu
-  if (human.tf) {
-    try { await human.tf.setBackend('cpu'); } catch (_) {}
-    try { await human.tf.ready(); } catch (_) {}
-  }
-  if (!human.tf) throw new Error('Human.js TF backend missing');
   return human;
 }
 
@@ -50,8 +44,9 @@ export async function initHuman() {
   if (window.__visHumanInitFailed) return null;
   if (!window.Human || !window.Human.Human) throw new Error('Human.js not loaded');
 
+  // Let Human.js use its default backend (webgl).
+  // Do NOT force wasm/cpu — webgl works and is fastest.
   const humanConfig = {
-    backend: 'cpu', // Use CPU backend to avoid WebGL/WebGPU issues
     modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/',
     cacheModels: true,
     face: {
@@ -69,13 +64,8 @@ export async function initHuman() {
   try {
     human = await loadHuman(humanConfig);
   } catch (err) {
-    try {
-      const fallbackConfig = Object.assign({}, humanConfig, { backend: 'cpu' });
-      human = await loadHuman(fallbackConfig);
-    } catch (fallbackErr) {
-      markHumanFailure(fallbackErr || err);
-      return null;
-    }
+    markHumanFailure(err);
+    return null;
   }
   window.__visHuman = human;
   return human;
@@ -89,27 +79,18 @@ export async function detectFace(video) {
     return { result: { face: [face] }, face };
   }
   const human = await initHuman();
-  if (!human || !human.tf) {
-    window.__visHuman = null;
-    window.__visHumanInitFailed = true;
+  if (!human) {
     return { result: null, face: null };
   }
-  // Check AND acquire lock synchronously to avoid async race condition
+  // Concurrency guard — only one detect() at a time
   if (window.__visDetectBusy) return { result: null, face: null };
   window.__visDetectBusy = true;
   try {
-    if (human.tf && human.tf.engine && human.tf.engine().startScope) human.tf.engine().startScope();
     const result = await human.detect(video);
-    if (human.tf && human.tf.engine && human.tf.engine().endScope) human.tf.engine().endScope();
-    if (human.tf && human.tf.nextFrame) await human.tf.nextFrame();
     const face = result && result.face && result.face[0] ? result.face[0] : null;
     return { result, face };
   } catch (detectErr) {
-    console.warn('[VIS] human.detect error (WebGL may have crashed):', detectErr && detectErr.message);
-    try { if (human.tf && human.tf.engine && human.tf.engine().endScope) human.tf.engine().endScope(); } catch (_) {}
-    // Trigger recovery: destroy corrupted instance so it reinitializes on next frame
-    window.__visHuman = null;
-    window.__visHumanInitFailed = true; // Tell UI to use fallback
+    // Silently handle — the unhandledrejection handler in app.html catches escaping errors
     return { result: null, face: null };
   } finally {
     window.__visDetectBusy = false;

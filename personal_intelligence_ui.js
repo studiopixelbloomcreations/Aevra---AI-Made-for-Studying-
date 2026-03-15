@@ -1009,8 +1009,6 @@
     try {
       const modelBasePath = await resolveHumanModelBase();
       const cfg = {
-        backend: "wasm",
-        wasmPath: "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/",
         cacheSensitivity: 0,
         modelBasePath: modelBasePath,
         face: {
@@ -1029,22 +1027,10 @@
       };
       const human = new window.Human.Human(cfg);
       if (human.load) await human.load();
-      if (!human.tf) throw new Error("Human.js TF backend missing");
-      try { if (human.tf.removeBackend) human.tf.removeBackend('webgl'); } catch (_) {}
-      try { if (human.tf.removeBackend) human.tf.removeBackend('webgpu'); } catch (_) {}
-      try { await human.tf.setBackend('wasm'); } catch (_) {}
-      try { await human.tf.ready(); } catch (_) {}
-      if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
-        try { await human.tf.setBackend('wasm'); } catch (_) {}
-        try { await human.tf.ready(); } catch (_) {}
-      }
-      if (human.tf.getBackend && human.tf.getBackend() !== 'wasm') {
-        throw new Error("Human.js backend not ready (wasm)");
-      }
       visHuman = human;
       window.__visHuman = human;
       visHumanReady = true;
-      pushVisDebug("Human.js loaded (wasm fallback, no warmup).");
+      pushVisDebug("Human.js loaded (default backend).");
       return true;
     } catch (e) {
       pushVisDebug("Human.js init failed: " + String((e && e.message) || e));

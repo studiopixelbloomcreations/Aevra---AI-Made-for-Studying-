@@ -556,55 +556,7 @@
   </div>
 
   <script>
-    // Block ALL GPU context creation: WebGL + WebGPU
-    (function() {
-      // Block WebGL on HTMLCanvasElement
-      var origGetContext = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function(type) {
-        if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') return null;
-        return origGetContext.apply(this, arguments);
-      };
-      // Block WebGL on OffscreenCanvas
-      if (typeof OffscreenCanvas !== 'undefined') {
-        var origOSGetContext = OffscreenCanvas.prototype.getContext;
-        OffscreenCanvas.prototype.getContext = function(type) {
-          if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') return null;
-          return origOSGetContext.apply(this, arguments);
-        };
-      }
-      // Block WebGPU — Human.js falls back to WebGPU if WebGL is blocked
-      // Provide a safe stub to avoid WebGPU backend crashes in TFJS/Human.js
-      try {
-        Object.defineProperty(navigator, 'gpu', {
-          value: {
-            requestAdapter: function() { return Promise.resolve(null); },
-            getPreferredCanvasFormat: function() { return null; }
-          },
-          configurable: true
-        });
-      } catch(_) {
-        try {
-          navigator.gpu = {
-            requestAdapter: function() { return Promise.resolve(null); },
-            getPreferredCanvasFormat: function() { return null; }
-          };
-        } catch(__) {}
-      }
-      try { Object.defineProperty(window, 'WebGL2RenderingContext', { value: undefined, writable: false }); } catch(_){}
-      
-      // INTERCEPT FETCH: Human.js ignores wasmPath and tries to load WASM from its own CDN path (404)
-      var origFetch = window.fetch;
-      window.fetch = function(resource, init) {
-        var url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
-        if (url.indexOf('tfjs-backend-wasm') !== -1 && url.indexOf('.wasm') !== -1) {
-          // Redirect the broken human.js wasm request to the actual tensorflow wasm CDN
-          var filename = url.substring(url.lastIndexOf('/')); // e.g., /tfjs-backend-wasm-simd.wasm
-          arguments[0] = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist' + filename;
-        }
-        return origFetch.apply(this, arguments);
-      };
-    })();
-    // Suppress Human.js/TF unhandled promise rejections
+    // Suppress Human.js/TF internal errors that escape try/catch blocks
     window.addEventListener('unhandledrejection', function(event) {
       var reason = event && event.reason;
       if (!reason) return;
@@ -612,7 +564,8 @@
       var stack = reason.stack || '';
       if (msg.indexOf("'backend'") !== -1 || msg.indexOf('disposed') !== -1 ||
           msg.indexOf('WebGL') !== -1 || msg.indexOf('webgl') !== -1 ||
-          stack.indexOf('human.js') !== -1) {
+          msg.indexOf('wasm') !== -1 || msg.indexOf('moveData') !== -1 ||
+          stack.indexOf('human.js') !== -1 || stack.indexOf('human_engine.js') !== -1) {
         event.preventDefault();
         event.stopImmediatePropagation();
         return false;
