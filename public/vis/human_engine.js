@@ -82,26 +82,26 @@ export async function detectFace(video) {
   if (!human) {
     return { result: null, face: null };
   }
-  // Concurrency guard — only one detect() at a time
-  if (window.__visDetectBusy) return { result: null, face: null };
-  window.__visDetectBusy = true;
-  try {
-    const result = await human.detect(video);
-    const face = result && result.face && result.face[0] ? result.face[0] : null;
-    if (!face && result) {
-      // Log once every 10 failed detections to avoid console spam
-      window.__visDetectMissCount = (window.__visDetectMissCount || 0) + 1;
-      if (window.__visDetectMissCount <= 3 || window.__visDetectMissCount % 10 === 0) {
-        console.log('[VIS] detect returned', result.face ? result.face.length : 0, 'faces (miss #' + window.__visDetectMissCount + ')');
+  // Global mutex queue for WebGL safety
+  window.__visDetectQueue = window.__visDetectQueue || Promise.resolve();
+
+  return new Promise(function(resolve) {
+    window.__visDetectQueue = window.__visDetectQueue.then(async function() {
+      try {
+        const result = await human.detect(video);
+        const face = result && result.face && result.face[0] ? result.face[0] : null;
+        if (!face && result) {
+          window.__visDetectMissCount = (window.__visDetectMissCount || 0) + 1;
+          if (window.__visDetectMissCount <= 3 || window.__visDetectMissCount % 10 === 0) {
+            console.log('[VIS] detect returned', result.face ? result.face.length : 0, 'faces (miss #' + window.__visDetectMissCount + ')');
+          }
+        } else if (face) {
+          window.__visDetectMissCount = 0;
+        }
+        resolve({ result, face });
+      } catch (detectErr) {
+        resolve({ result: null, face: null });
       }
-    } else if (face) {
-      window.__visDetectMissCount = 0;
-    }
-    return { result, face };
-  } catch (detectErr) {
-    // Silently handle — the unhandledrejection handler in app.html catches escaping errors
-    return { result: null, face: null };
-  } finally {
-    window.__visDetectBusy = false;
-  }
+    });
+  });
 }
