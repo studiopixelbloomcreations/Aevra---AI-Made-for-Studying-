@@ -1092,6 +1092,8 @@
           resolve({ faces: faces, result: result || null });
         } catch (e) {
           console.warn('[VIS] getHumanDetections error:', e && e.message);
+          window.__visHumanInitFailed = true;
+          window.__visHuman = null;
           resolve({ faces: [], result: null });
         }
       });
@@ -2462,9 +2464,28 @@
     const vectors = [];
     const landmarks = [];
     const geometrySnapshots = [];
+    const scanStart = Date.now();
+    let timeoutHits = 0;
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise(function (resolve) {
+          setTimeout(function () { resolve({ faces: [], result: null, timeout: true }); }, ms);
+        })
+      ]);
+    }
     for (let i = 0; i < VIS_SCAN_FRAME_COUNT; i += 1) {
       await new Promise(function (resolve) { setTimeout(resolve, VIS_ENROLL_FRAME_DELAY_MS); });
-      const detection = await getHumanDetections();
+      const detection = await withTimeout(getHumanDetections(), 1200);
+      if (detection && detection.timeout) timeoutHits += 1;
+      if (window.__visHumanInitFailed || (Date.now() - scanStart) > 8000 || timeoutHits >= 3) {
+        visScanning = false;
+        visSetupState.step = 3;
+        try { renderVisSetup(); } catch (e) {}
+        pushVisDebug("Face scan timed out. Please retry.");
+        addLog("assistant", "Tutor: Setup scan timed out. Please try again.");
+        return;
+      }
       const face = detection && detection.faces ? selectPrimaryFace(detection.faces) : null;
       if (face && Array.isArray(face.embedding) && face.embedding.length) {
         vectors.push(face.embedding.slice(0));
