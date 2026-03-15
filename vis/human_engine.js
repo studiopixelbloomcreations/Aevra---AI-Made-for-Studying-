@@ -37,15 +37,17 @@ const MP_VISION_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/visi
 const MP_WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 const MP_FACE_DETECTOR_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
 const MP_IMAGE_EMBEDDER_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite';
+const MP_FACE_LANDMARKER_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 let mpReadyPromise = null;
 let mpFaceDetector = null;
 let mpImageEmbedder = null;
+let mpFaceLandmarker = null;
 
 async function ensureMediapipeReady() {
   if (mpReadyPromise) return mpReadyPromise;
   mpReadyPromise = (async function() {
     const vision = await import(MP_VISION_CDN);
-    const { FilesetResolver, FaceDetector, ImageEmbedder } = vision;
+    const { FilesetResolver, FaceDetector, ImageEmbedder, FaceLandmarker } = vision;
     const fileset = await FilesetResolver.forVisionTasks(MP_WASM_PATH);
     mpFaceDetector = await FaceDetector.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: MP_FACE_DETECTOR_MODEL },
@@ -56,6 +58,12 @@ async function ensureMediapipeReady() {
       runningMode: 'VIDEO',
       l2Normalize: true,
       quantize: false
+    });
+    mpFaceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MP_FACE_LANDMARKER_MODEL },
+      runningMode: 'VIDEO',
+      outputFaceBlendshapes: true,
+      numFaces: 1
     });
   })();
   return mpReadyPromise;
@@ -94,13 +102,41 @@ function normalizeBox(bbox) {
   return { x, y, width: w, height: h };
 }
 
+function blendshapeToEmotion(blendshapes) {
+  if (!blendshapes || !blendshapes.length) return [];
+  const scores = {};
+  for (const item of blendshapes) {
+    const name = item && item.categoryName ? String(item.categoryName) : '';
+    const score = Number(item && item.score || 0);
+    scores[name] = score;
+  }
+  const smile = (scores.mouthSmileLeft || 0) + (scores.mouthSmileRight || 0);
+  const frown = (scores.mouthFrownLeft || 0) + (scores.mouthFrownRight || 0);
+  const browDown = (scores.browDownLeft || 0) + (scores.browDownRight || 0);
+  const browInnerUp = (scores.browInnerUp || 0);
+  const jawOpen = (scores.jawOpen || 0);
+  const lipPress = (scores.mouthPressLeft || 0) + (scores.mouthPressRight || 0);
+  const surprise = Math.min(1, jawOpen * 0.7 + browInnerUp * 0.5);
+  const happy = Math.min(1, smile);
+  const sad = Math.min(1, frown * 0.6 + browInnerUp * 0.4);
+  const angry = Math.min(1, browDown * 0.6 + lipPress * 0.4);
+  const neutral = Math.max(0, 1 - Math.max(happy, sad, angry, surprise));
+  return [
+    { emotion: 'happy', score: happy },
+    { emotion: 'sad', score: sad },
+    { emotion: 'angry', score: angry },
+    { emotion: 'surprised', score: surprise },
+    { emotion: 'neutral', score: neutral }
+  ];
+}
+
 
 export async function initHuman() {
   if (window.__visHuman) return window.__visHuman;
   if (window.__visHumanInitFailed) return null;
   try {
     await ensureMediapipeReady();
-    if (!mpFaceDetector || !mpImageEmbedder) throw new Error('MediaPipe not initialized');
+    if (!mpFaceDetector || !mpImageEmbedder || !mpFaceLandmarker) throw new Error('MediaPipe not initialized');
     window.__visHuman = { backend: 'mediapipe' };
     return window.__visHuman;
   } catch (err) {
@@ -122,7 +158,7 @@ export async function detectFace(video) {
   window.__visBackendDetectBusy = true;
   try {
     await ensureMediapipeReady();
-    if (!mpFaceDetector || !mpImageEmbedder) return { result: null, face: null };
+    if (!mpFaceDetector || !mpImageEmbedder || !mpFaceLandmarker) return { result: null, face: null };
     const ts = (window.performance && performance.now) ? performance.now() : Date.now();
     const detectionResult = mpFaceDetector.detectForVideo(video, ts);
     const detections = detectionResult && Array.isArray(detectionResult.detections) ? detectionResult.detections : [];
@@ -134,7 +170,12 @@ export async function detectFace(video) {
     const embedding = embedResult && embedResult.embeddings && embedResult.embeddings[0]
       ? (embedResult.embeddings[0].floatEmbedding || [])
       : [];
-    const face = { embedding, box: bbox, emotion: [] };
+    const landmarkerResult = mpFaceLandmarker.detectForVideo(video, ts);
+    const blendshapes = landmarkerResult && landmarkerResult.faceBlendshapes && landmarkerResult.faceBlendshapes[0]
+      ? landmarkerResult.faceBlendshapes[0].categories
+      : [];
+    const emotion = blendshapeToEmotion(blendshapes);
+    const face = { embedding, box: bbox, emotion };
     return { result: { face: [face] }, face };
   } catch (err) {
     return { result: null, face: null };
