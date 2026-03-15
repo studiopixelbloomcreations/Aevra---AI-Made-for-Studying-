@@ -1059,28 +1059,17 @@
     if (!visVideoEl) return { faces: [], result: null };
     const ok = await ensureHumanReady();
     if (!ok || !visHuman) return { faces: [], result: null };
-    if (!visHuman.tf || (visHuman.tf.getBackend && visHuman.tf.getBackend() !== 'wasm')) {
-      window.__visHuman = null;
-      window.__visHumanInitFailed = true;
-      pushVisDebug("Human.js backend not ready; skipping detection.");
-      return { faces: [], result: null };
-    }
     // Skip if another detect call is in progress (vis_controller or us)
     if (window.__visDetectBusy) return { faces: [], result: null };
     window.__visDetectBusy = true;
     try {
       const source = getHumanDetectionSource();
-      if (visHuman.tf && visHuman.tf.engine && visHuman.tf.engine().startScope) visHuman.tf.engine().startScope();
       const result = await visHuman.detect(source);
-      if (visHuman.tf && visHuman.tf.engine && visHuman.tf.engine().endScope) visHuman.tf.engine().endScope();
       if (visHuman.tf && visHuman.tf.nextFrame) await visHuman.tf.nextFrame();
       const faces = result && Array.isArray(result.face) ? result.face.slice(0) : [];
       return { faces: faces, result: result || null };
     } catch (e) {
-      console.warn('[VIS] getHumanDetections error (WebGL may have crashed):', e && e.message);
-      if (visHuman && visHuman.tf && visHuman.tf.engine && visHuman.tf.engine().endScope) { try { visHuman.tf.engine().endScope(); } catch(_){} }
-      window.__visHuman = null;
-      window.__visHumanInitFailed = true;
+      console.warn('[VIS] getHumanDetections error:', e && e.message);
       return { faces: [], result: null };
     } finally {
       window.__visDetectBusy = false;
