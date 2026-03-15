@@ -34,10 +34,11 @@
   const VIS_SCAN_INTERVAL_MS = 80;
   const VIS_SCAN_FRAME_COUNT = 8;
   const VIS_PROFILE_DOC_LIMIT = 100;
-  const VIS_FACE_API_PATH = "/vis/face/embedding";
-  const VIS_FACE_HEALTH_PATH = "/vis/face/health";
-  const VIS_DEEPFACE_MODEL = "Facenet512";
-  const VIS_DEEPFACE_DETECTOR = "opencv";
+  const VIS_MEDIAPIPE_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+  const VIS_MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+  const VIS_FACE_DETECTOR_MODEL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
+  const VIS_IMAGE_EMBEDDER_MODEL = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite";
+  const VIS_HUMAN_EMOTION_CDN = "https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js";
   function isOffline() {
     return window.__OFFLINE_MODE__ === true || navigator.onLine === false;
   }
@@ -138,7 +139,6 @@
   let visExpectedProfileFile = "";
   let visUnknownFaceSince = 0;
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
-  const VIS_HUMAN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/";
   let visHuman = null;
   let visHumanReady = false;
   let visHumanLoading = false;
@@ -824,8 +824,8 @@
       visVerificationBusy = false;
       return;
     }
-    if (targetModel !== "deepface") {
-      if (statusEl) statusEl.textContent = "Verification failed: profile not enrolled with DeepFace.";
+    if (targetModel !== "mediapipe") {
+      if (statusEl) statusEl.textContent = "Verification failed: profile not enrolled with MediaPipe.";
       visVerificationBusy = false;
       return;
     }
@@ -956,10 +956,95 @@
     }, 5000);
   }
 
-  function getVisApiFetch() {
-    return (window.Api && window.Api.apiFetch) ? window.Api.apiFetch : function (path, options) {
-      return fetch(path, options);
-    };
+  let visMpReadyPromise = null;
+  let visMpFaceDetector = null;
+  let visMpImageEmbedder = null;
+  let visEmotionReadyPromise = null;
+  let visEmotionHuman = null;
+  let visLastEmotionAt = 0;
+  let visLastEmotionList = [];
+
+  async function ensureMediapipeReady() {
+    if (visMpReadyPromise) return visMpReadyPromise;
+    visMpReadyPromise = (async function () {
+      const vision = await import(VIS_MEDIAPIPE_CDN);
+      const FilesetResolver = vision.FilesetResolver;
+      const FaceDetector = vision.FaceDetector;
+      const ImageEmbedder = vision.ImageEmbedder;
+      const fileset = await FilesetResolver.forVisionTasks(VIS_MEDIAPIPE_WASM);
+      visMpFaceDetector = await FaceDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: VIS_FACE_DETECTOR_MODEL },
+        runningMode: "VIDEO"
+      });
+      visMpImageEmbedder = await ImageEmbedder.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: VIS_IMAGE_EMBEDDER_MODEL },
+        runningMode: "VIDEO",
+        l2Normalize: true,
+        quantize: false
+      });
+    })();
+    return visMpReadyPromise;
+  }
+
+  async function loadHumanEmotionScript() {
+    return new Promise(function (resolve, reject) {
+      const existing = document.querySelector('script[data-vis-human-emotion="true"]');
+      if (existing) {
+        if (window.Human && window.Human.Human) return resolve();
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const tag = document.createElement("script");
+      tag.src = VIS_HUMAN_EMOTION_CDN;
+      tag.async = true;
+      tag.defer = true;
+      tag.setAttribute("data-vis-human-emotion", "true");
+      tag.onload = resolve;
+      tag.onerror = reject;
+      document.head.appendChild(tag);
+    });
+  }
+
+  async function ensureEmotionHumanReady() {
+    if (window.__VIS_EMOTION_DISABLED) return null;
+    if (visEmotionHuman) return visEmotionHuman;
+    if (visEmotionReadyPromise) return visEmotionReadyPromise;
+    visEmotionReadyPromise = (async function () {
+      if (!window.Human || !window.Human.Human) {
+        await loadHumanEmotionScript();
+      }
+      if (!window.Human || !window.Human.Human) throw new Error("Human.js not loaded");
+      const human = new window.Human.Human({
+        backend: "wasm",
+        wasmPath: "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/",
+        modelBasePath: "https://cdn.jsdelivr.net/npm/@vladmandic/human/models/",
+        face: { enabled: true, detector: { rotation: true, maxDetected: 1 }, mesh: false, iris: false, description: false },
+        emotion: { enabled: true },
+        body: { enabled: false },
+        hand: { enabled: false }
+      });
+      if (human.load) await human.load();
+      visEmotionHuman = human;
+      return visEmotionHuman;
+    })();
+    return visEmotionReadyPromise;
+  }
+
+  async function detectEmotionForVideo(videoEl) {
+    if (!videoEl) return [];
+    if ((Date.now() - visLastEmotionAt) < 500) return visLastEmotionList;
+    try {
+      const human = await ensureEmotionHumanReady();
+      if (!human) return [];
+      const result = await human.detect(videoEl);
+      const face = result && result.face && result.face[0] ? result.face[0] : null;
+      visLastEmotionList = (face && face.emotion) ? face.emotion : [];
+      visLastEmotionAt = Date.now();
+      return visLastEmotionList;
+    } catch (e) {
+      return [];
+    }
   }
 
   async function ensureHumanReady() {
@@ -967,17 +1052,16 @@
     if (visHumanLoading) return false;
     visHumanLoading = true;
     try {
-      const res = await getVisApiFetch()(VIS_FACE_HEALTH_PATH, { method: "GET" });
-      const data = res && res.ok ? await res.json() : null;
-      if (!data || !data.ok) throw new Error("DeepFace backend not ready");
-      visHuman = { backend: "deepface" };
+      await ensureMediapipeReady();
+      if (!visMpFaceDetector || !visMpImageEmbedder) throw new Error("MediaPipe not initialized");
+      visHuman = { backend: "mediapipe" };
       window.__visHuman = visHuman;
       window.__visHumanInitFailed = false;
       visHumanReady = true;
-      pushVisDebug("DeepFace backend ready.");
+      pushVisDebug("MediaPipe backend ready.");
       return true;
     } catch (e) {
-      pushVisDebug("DeepFace backend not ready: " + String((e && e.message) || e));
+      pushVisDebug("MediaPipe backend not ready: " + String((e && e.message) || e));
       window.__visHumanInitFailed = true;
       visHumanReady = false;
       return false;
@@ -998,7 +1082,7 @@
     };
   }
 
-  // DeepFace backend integration active; legacy pipeline disabled for VIS.
+  // MediaPipe backend integration active; legacy pipeline disabled for VIS.
 
   async function getHumanDetections() {
     if (!visVideoEl) return { faces: [], result: null };
@@ -1007,27 +1091,27 @@
     if (visDetectBusy) return { faces: [], result: null };
     const sourceCanvas = getHumanDetectionSource();
     if (!sourceCanvas) return { faces: [], result: null };
-    const dataUrl = (sourceCanvas && sourceCanvas.toDataURL)
-      ? sourceCanvas.toDataURL("image/jpeg", 0.7)
-      : null;
-    if (!dataUrl) return { faces: [], result: null };
     visDetectBusy = true;
     try {
-      const res = await getVisApiFetch()(VIS_FACE_API_PATH, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_base64: dataUrl,
-          model: VIS_DEEPFACE_MODEL,
-          detector: VIS_DEEPFACE_DETECTOR
-        })
-      });
-      if (!res || !res.ok) return { faces: [], result: null };
-      const data = await res.json();
-      const faces = data && Array.isArray(data.faces) ? data.faces : [];
-      return { faces: faces, result: data || null };
+      const ts = (window.performance && performance.now) ? performance.now() : Date.now();
+      const detectionResult = visMpFaceDetector.detectForVideo(sourceCanvas, ts);
+      const detections = detectionResult && Array.isArray(detectionResult.detections) ? detectionResult.detections : [];
+      if (!detections.length) return { faces: [], result: detectionResult || null };
+      const bbox = detections[0] && detections[0].boundingBox ? detections[0].boundingBox : null;
+      const box = bbox
+        ? { x: Number(bbox.originX || 0), y: Number(bbox.originY || 0), width: Number(bbox.width || 0), height: Number(bbox.height || 0) }
+        : null;
+      const crop = getFaceCropCanvas(sourceCanvas, box);
+      if (!crop) return { faces: [], result: detectionResult || null };
+      const embedResult = visMpImageEmbedder.embedForVideo(crop, ts);
+      const embedding = embedResult && embedResult.embeddings && embedResult.embeddings[0]
+        ? (embedResult.embeddings[0].floatEmbedding || [])
+        : [];
+      const emotion = await detectEmotionForVideo(visVideoEl);
+      const face = { embedding: embedding, box: box, emotion: emotion };
+      return { faces: [face], result: detectionResult || null };
     } catch (e) {
-      console.warn('[VIS] DeepFace detect error:', e && e.message);
+      console.warn('[VIS] MediaPipe detect error:', e && e.message);
       return { faces: [], result: null };
     } finally {
       visDetectBusy = false;
@@ -1192,6 +1276,29 @@
     canvas.height = h;
     try {
       ctx.drawImage(visVideoEl, 0, 0, w, h);
+      return canvas;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getFaceCropCanvas(sourceCanvas, box) {
+    if (!sourceCanvas || !box) return null;
+    const canvas = visCanvasEl || document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    const w = sourceCanvas.width || sourceCanvas.videoWidth || 0;
+    const h = sourceCanvas.height || sourceCanvas.videoHeight || 0;
+    if (!w || !h) return null;
+    const x = Math.max(0, Math.min(w - 1, box.x));
+    const y = Math.max(0, Math.min(h - 1, box.y));
+    const bw = Math.max(1, Math.min(w - x, box.width));
+    const bh = Math.max(1, Math.min(h - y, box.height));
+    const target = 224;
+    canvas.width = target;
+    canvas.height = target;
+    try {
+      ctx.drawImage(sourceCanvas, x, y, bw, bh, 0, 0, target, target);
       return canvas;
     } catch (e) {
       return null;
@@ -1951,7 +2058,7 @@
           if (!vector.length && !profile) return;
           nextIndex.push({
             profileFile: fileName,
-            vector: signatureModel === "deepface" ? vector.slice(0) : vector.slice(0, 256),
+            vector: signatureModel === "mediapipe" ? vector.slice(0) : vector.slice(0, 256),
             username: String(data.username || (profile && profile.user_identity && profile.user_identity.username) || fileName),
             profile: profile,
             vector_model: signatureModel,
@@ -1967,7 +2074,7 @@
           if (!vector.length) return;
           nextIndex.push({
             profileFile: fileName,
-            vector: signatureModel === "deepface" ? vector.slice(0) : vector.slice(0, 256),
+            vector: signatureModel === "mediapipe" ? vector.slice(0) : vector.slice(0, 256),
             username: String((profile.user_identity && profile.user_identity.username) || fileName),
             profile: profile,
             vector_model: signatureModel,
@@ -2351,7 +2458,7 @@
     }
     const identityHints = getSignedInIdentityHints();
     const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
-    const signatureModel = "deepface";
+    const signatureModel = "mediapipe";
     const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
       scan_mode: visSetupState.infrared ? "infrared_assisted" : "high_precision_rgb",
       frame_count: payload.frameCount || payload.vectorsLength || 0,
@@ -2365,7 +2472,7 @@
       },
       geometry_map: {
         geometry_snapshots: (payload.geometry || []).slice(0, 6),
-        extraction: "deepface embedding + bounding box",
+        extraction: "mediapipe embedder + bounding box",
       },
       created_at: nowIso(),
     });
@@ -2391,7 +2498,7 @@
     visScanning = true;
     visSetupState.step = 4;
     try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
-    const signatureModel = "deepface";
+    const signatureModel = "mediapipe";
     // Reset failed init to allow retry on user action
     window.__visHumanInitFailed = false;
     window.__visHuman = null;
@@ -2401,10 +2508,10 @@
       visScanning = false;
       visSetupState.step = 3;
       try { renderVisSetup(); } catch (e) {}
-      pushVisDebug("DeepFace backend not ready. Check backend and retry.");
+      pushVisDebug("MediaPipe backend not ready. Check browser support and retry.");
       return;
     }
-    pushVisDebug("Face scan started (deepface).");
+    pushVisDebug("Face scan started (mediapipe).");
     if (!visVideoEl || !visVideoEl.srcObject || !visVideoEl.videoWidth || !visVideoEl.videoHeight) {
       const cameraReady = await ensureVisCameraReady();
       if (!cameraReady) {
@@ -2471,7 +2578,7 @@
       addLog("assistant", "Tutor: Setup scan failed. Keep face in frame and retry.");
       return;
     }
-    pushVisDebug("Scan completed with DeepFace frames: " + String(vectors.length));
+    pushVisDebug("Scan completed with MediaPipe frames: " + String(vectors.length));
     const avgVector = averageVectors(vectors);
     visPendingEnrollmentPayload = {
       avgVector: avgVector,
@@ -2491,7 +2598,7 @@
       setAssistantStateForVisOffline("Recognizing user...");
       return;
     }
-    const match = findVisMatch(vector, "deepface");
+    const match = findVisMatch(vector, "mediapipe");
     if (!match || match.score < VIS_RECOGNITION_THRESHOLD) {
       visNoMatchCount += 1;
       if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {

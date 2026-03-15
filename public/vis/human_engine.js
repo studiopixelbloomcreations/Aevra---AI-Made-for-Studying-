@@ -29,31 +29,135 @@ function buildTestFace() {
 function markHumanFailure(err) {
   if (!window.__visHumanInitFailed) {
     window.__visHumanInitFailed = true;
-    window.__visHumanInitError = err || new Error('DeepFace backend init failed');
+    window.__visHumanInitError = err || new Error('MediaPipe init failed');
   }
 }
 
-function getApiFetch() {
-  return (window.Api && window.Api.apiFetch) ? window.Api.apiFetch : function(path, options) {
-    return fetch(path, options);
-  };
+const MP_VISION_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs';
+const MP_WASM_PATH = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+const MP_FACE_DETECTOR_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+const MP_IMAGE_EMBEDDER_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite';
+const HUMAN_EMOTION_CDN = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
+
+let mpReadyPromise = null;
+let mpFaceDetector = null;
+let mpImageEmbedder = null;
+let emotionReadyPromise = null;
+let emotionHuman = null;
+let lastEmotionAt = 0;
+let lastEmotion = [];
+
+async function ensureMediapipeReady() {
+  if (mpReadyPromise) return mpReadyPromise;
+  mpReadyPromise = (async function() {
+    const vision = await import(MP_VISION_CDN);
+    const { FilesetResolver, FaceDetector, ImageEmbedder } = vision;
+    const fileset = await FilesetResolver.forVisionTasks(MP_WASM_PATH);
+    mpFaceDetector = await FaceDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MP_FACE_DETECTOR_MODEL },
+      runningMode: 'VIDEO'
+    });
+    mpImageEmbedder = await ImageEmbedder.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: MP_IMAGE_EMBEDDER_MODEL },
+      runningMode: 'VIDEO',
+      l2Normalize: true,
+      quantize: false
+    });
+  })();
+  return mpReadyPromise;
 }
 
-function captureFrameDataUrl(video) {
+function captureFaceCrop(video, box) {
   if (!video || !video.videoWidth || !video.videoHeight) return null;
+  if (!box) return null;
   const canvas = window.__visCaptureCanvas || document.createElement('canvas');
   window.__visCaptureCanvas = canvas;
-  const w = Math.min(320, video.videoWidth);
-  const h = Math.min(240, video.videoHeight);
-  canvas.width = w;
-  canvas.height = h;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const x = Math.max(0, Math.min(vw - 1, box.x));
+  const y = Math.max(0, Math.min(vh - 1, box.y));
+  const w = Math.max(1, Math.min(vw - x, box.width));
+  const h = Math.max(1, Math.min(vh - y, box.height));
+  const target = 224;
+  canvas.width = target;
+  canvas.height = target;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
   try {
-    ctx.drawImage(video, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.7);
+    ctx.drawImage(video, x, y, w, h, 0, 0, target, target);
+    return canvas;
   } catch (_) {
     return null;
+  }
+}
+
+function normalizeBox(bbox) {
+  if (!bbox) return null;
+  const x = Number(bbox.originX || bbox.x || 0);
+  const y = Number(bbox.originY || bbox.y || 0);
+  const w = Number(bbox.width || 0);
+  const h = Number(bbox.height || 0);
+  return { x, y, width: w, height: h };
+}
+
+async function loadHumanScript(src) {
+  return new Promise(function(resolve, reject) {
+    const existing = document.querySelector('script[data-vis-human-emotion="true"]');
+    if (existing) {
+      if (window.Human && window.Human.Human) return resolve();
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const tag = document.createElement('script');
+    tag.src = src;
+    tag.async = true;
+    tag.defer = true;
+    tag.setAttribute('data-vis-human-emotion', 'true');
+    tag.onload = resolve;
+    tag.onerror = reject;
+    document.head.appendChild(tag);
+  });
+}
+
+async function ensureEmotionHumanReady() {
+  if (window.__VIS_EMOTION_DISABLED) return null;
+  if (emotionHuman) return emotionHuman;
+  if (emotionReadyPromise) return emotionReadyPromise;
+  emotionReadyPromise = (async function() {
+    if (!window.Human || !window.Human.Human) {
+      await loadHumanScript(HUMAN_EMOTION_CDN);
+    }
+    if (!window.Human || !window.Human.Human) throw new Error('Human.js not loaded');
+    const human = new window.Human.Human({
+      backend: 'wasm',
+      wasmPath: 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/',
+      modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/',
+      face: { enabled: true, detector: { rotation: true, maxDetected: 1 }, mesh: false, iris: false, description: false },
+      emotion: { enabled: true },
+      body: { enabled: false },
+      hand: { enabled: false }
+    });
+    if (human.load) await human.load();
+    emotionHuman = human;
+    return emotionHuman;
+  })();
+  return emotionReadyPromise;
+}
+
+async function detectEmotion(video) {
+  if (!video) return [];
+  if ((Date.now() - lastEmotionAt) < 500) return lastEmotion;
+  try {
+    const human = await ensureEmotionHumanReady();
+    if (!human) return [];
+    const result = await human.detect(video);
+    const face = result && result.face && result.face[0] ? result.face[0] : null;
+    lastEmotion = (face && face.emotion) ? face.emotion : [];
+    lastEmotionAt = Date.now();
+    return lastEmotion;
+  } catch (_) {
+    return [];
   }
 }
 
@@ -61,10 +165,9 @@ export async function initHuman() {
   if (window.__visHuman) return window.__visHuman;
   if (window.__visHumanInitFailed) return null;
   try {
-    const res = await getApiFetch()('/vis/face/health', { method: 'GET' });
-    const data = res && res.ok ? await res.json() : null;
-    if (!data || !data.ok) throw new Error('DeepFace backend not ready');
-    window.__visHuman = { backend: 'deepface' };
+    await ensureMediapipeReady();
+    if (!mpFaceDetector || !mpImageEmbedder) throw new Error('MediaPipe not initialized');
+    window.__visHuman = { backend: 'mediapipe' };
     return window.__visHuman;
   } catch (err) {
     markHumanFailure(err);
@@ -82,24 +185,24 @@ export async function detectFace(video) {
   const ready = await initHuman();
   if (!ready) return { result: null, face: null };
   if (window.__visBackendDetectBusy) return { result: null, face: null };
-  const dataUrl = captureFrameDataUrl(video);
-  if (!dataUrl) return { result: null, face: null };
   window.__visBackendDetectBusy = true;
   try {
-    const res = await getApiFetch()('/vis/face/embedding', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_base64: dataUrl,
-        model: window.__VIS_DEEPFACE_MODEL || 'Facenet512',
-        detector: window.__VIS_DEEPFACE_DETECTOR || 'opencv'
-      })
-    });
-    if (!res || !res.ok) return { result: null, face: null };
-    const data = await res.json();
-    const faces = data && Array.isArray(data.faces) ? data.faces : [];
-    const face = faces[0] || null;
-    return { result: { face: faces }, face };
+    await ensureMediapipeReady();
+    if (!mpFaceDetector || !mpImageEmbedder) return { result: null, face: null };
+    const ts = (window.performance && performance.now) ? performance.now() : Date.now();
+    const detectionResult = mpFaceDetector.detectForVideo(video, ts);
+    const detections = detectionResult && Array.isArray(detectionResult.detections) ? detectionResult.detections : [];
+    if (!detections.length) return { result: { face: [] }, face: null };
+    const bbox = normalizeBox(detections[0].boundingBox);
+    const crop = captureFaceCrop(video, bbox);
+    if (!crop) return { result: { face: [] }, face: null };
+    const embedResult = mpImageEmbedder.embedForVideo(crop, ts);
+    const embedding = embedResult && embedResult.embeddings && embedResult.embeddings[0]
+      ? (embedResult.embeddings[0].floatEmbedding || [])
+      : [];
+    const emotion = await detectEmotion(video);
+    const face = { embedding, box: bbox, emotion };
+    return { result: { face: [face] }, face };
   } catch (err) {
     return { result: null, face: null };
   } finally {
