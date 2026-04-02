@@ -607,7 +607,7 @@
     const retryBtn = visTestEl.querySelector('[data-vis-test="retry"]');
     const activateBtn = visTestEl.querySelector('[data-vis-test="activate"]');
     if (statusEl) statusEl.textContent = "Testing stage started. Look at the camera for verification...";
-    if (retryBtn) retryBtn.hidden = false;
+    if (retryBtn) retryBtn.hidden = true;
     if (activateBtn) activateBtn.hidden = true;
   }
 
@@ -862,8 +862,11 @@
     const retryBtn = visTestEl ? visTestEl.querySelector('[data-vis-test="retry"]') : null;
     const activateBtn = visTestEl ? visTestEl.querySelector('[data-vis-test="activate"]') : null;
     const targetUser = String((profile && profile.user_identity && profile.user_identity.username) || "");
+    if (retryBtn) retryBtn.hidden = true;
+    if (activateBtn) activateBtn.hidden = true;
     if (!targetUser) {
       if (statusEl) statusEl.textContent = "Verification failed: no enrolled user ID found.";
+      if (retryBtn) retryBtn.hidden = false;
       visVerificationBusy = false;
       return;
     }
