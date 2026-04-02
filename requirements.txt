@@ -11,6 +11,7 @@ pyttsx3
 pytesseract
 pillow
 deepface
+tf-keras
 opencv-python-headless
 numpy
 # note-friendly dependency for audio conversion guidance is ffmpeg (external), no pip package needed
