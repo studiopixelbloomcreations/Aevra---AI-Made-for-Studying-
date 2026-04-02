@@ -1,8 +1,10 @@
 [build]
-  publish = "."
+  base = "netlify"
+  command = "node build.mjs"
+  publish = "dist"
 
 [functions]
-  directory = "netlify/functions"
+  directory = "functions"
 
 [[redirects]]
   from = "/"
