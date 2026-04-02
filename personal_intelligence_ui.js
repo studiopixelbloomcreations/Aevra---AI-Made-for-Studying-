@@ -920,6 +920,9 @@
   function getVisEndpoint(globalKey, fallback) {
     const direct = window[globalKey];
     if (typeof direct === "string" && direct.trim()) return direct.trim();
+    if (window.Api && typeof window.Api.getBaseUrl === "function") {
+      return window.Api.getBaseUrl() + fallback;
+    }
     return fallback;
   }
 
@@ -2370,7 +2373,7 @@
     }
     const identityHints = getSignedInIdentityHints();
     const requested = sanitizeVisUsername(visSetupState.username) || sanitizeVisUsername(identityHints.username) || "user";
-    const signatureModel = "facepp";
+    const signatureModel = "deepface";
     const profile = getDefaultVisProfile(requested, identityHints.account_identifier, {
       scan_mode: visSetupState.infrared ? "infrared_assisted" : "standard_rgb",
       frame_count: payload.frameCount || 0,
@@ -2384,18 +2387,20 @@
       },
       geometry_map: {
         geometry_snapshots: [],
-        extraction: "facepp backend registration",
+        extraction: "deepface backend registration",
       },
       created_at: nowIso(),
     });
     profile.face_registration = {
-      provider: "facepp",
+      provider: "deepface",
       registered_frames: payload.frameCount || 0,
     };
     await postVisJson(getVisEndpoint("__VIS_FACE_REGISTER_URL", VIS_FACE_REGISTER_ENDPOINT), {
-      user_id: requested,
+      username: requested,
       images: payload.frames.slice(0),
-      profile_data: profile,
+      personalization_profile: profile.personalization_profile || {},
+      ai_config: profile.ai_config || {},
+      memory: profile.memory || {},
     });
     await saveVisProfileToCloud(profile);
     await createVisProfileArtifactInRepo(profile);
@@ -2419,7 +2424,7 @@
     visScanning = true;
     visSetupState.step = 4;
     try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
-    pushVisDebug("Face scan started (facepp backend).");
+    pushVisDebug("Face scan started (deepface backend).");
     if (!visVideoEl || !visVideoEl.srcObject || !visVideoEl.videoWidth || !visVideoEl.videoHeight) {
       const cameraReady = await ensureVisCameraReady();
       if (!cameraReady) {
@@ -2459,7 +2464,7 @@
     visPendingEnrollmentPayload = {
       frames: frames.slice(0),
       frameCount: frames.length,
-      signatureModel: "facepp",
+      signatureModel: "deepface",
     };
     visSetupState.step = 5;
     renderVisSetup();
