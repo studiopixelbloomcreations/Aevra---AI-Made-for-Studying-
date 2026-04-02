@@ -117,18 +117,35 @@ class DeepFaceService:
         images = [self._decode(image) for image in images_b64 if image]
         if len(images) < 3:
             raise ValueError("At least 3 frames are required for registration")
-        if movement_score(images[:3]) <= 1.0:
+        if movement_score(images[: min(len(images), 5)]) <= 1.0:
             raise ValueError("Registration failed liveness check")
-        verification = DeepFace.verify(
-            img1_path=images[0],
-            img2_path=images[-1],
-            model_name=self.model_name,
-            distance_metric=self.distance_metric,
-            detector_backend=self.detector_backend,
-            enforce_detection=False,
-            silent=True,
-        )
-        if not verification.get("verified", False):
+        verification_pairs = [
+            (0, len(images) - 1),
+            (0, len(images) // 2),
+            (len(images) // 3, (2 * len(images)) // 3),
+        ]
+        consistent = False
+        for left_index, right_index in verification_pairs:
+            if left_index == right_index:
+                continue
+            verification = DeepFace.verify(
+                img1_path=images[left_index],
+                img2_path=images[right_index],
+                model_name=self.model_name,
+                distance_metric=self.distance_metric,
+                detector_backend=self.detector_backend,
+                enforce_detection=False,
+                silent=True,
+            )
+            if verification.get("verified", False):
+                consistent = True
+                break
+            distance = float(verification.get("distance", 1.0))
+            threshold = float(verification.get("max_threshold_to_verify", 0.4) or 0.4)
+            if distance <= threshold * 1.15:
+                consistent = True
+                break
+        if not consistent:
             raise ValueError("Registration frames are not consistent enough for one user")
         folder = save_face_images(username, images)
         self._refresh_embeddings_cache()

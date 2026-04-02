@@ -149,10 +149,6 @@ async function runRegistrationFlow(video, seedResult) {
     }
 
     if (!userId) {
-      userId = String(window.prompt('Enter a user ID to register this face') || '').trim();
-    }
-
-    if (!userId) {
       recordEvent('registration_cancelled');
       emit('vis:setup-cancelled', {});
       return;
