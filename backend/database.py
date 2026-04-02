@@ -7,11 +7,17 @@ import requests
 class SupabaseUsersRepository:
     def __init__(self) -> None:
         self.base_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        self.api_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
+        self.api_key = (
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_ROLE")
+            or os.environ.get("SUPABASE_ANON_KEY", "")
+        )
 
     def _headers(self) -> Dict[str, str]:
         if not self.base_url or not self.api_key:
-            raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+            raise RuntimeError(
+                "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_ROLE"
+            )
         return {
             "apikey": self.api_key,
             "Authorization": f"Bearer {self.api_key}",
