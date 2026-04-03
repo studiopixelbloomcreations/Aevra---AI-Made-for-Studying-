@@ -33,6 +33,7 @@
   const VIS_CAPTURE_MAX_WIDTH = 960;
   const VIS_LIGHTING_MIN_LUMA = 0.22;
   const VIS_SCAN_INTERVAL_MS = 180;
+  const VIS_BACKEND_BUSY_RETRY_MS = 30000;
   const VIS_SCAN_FRAME_COUNT = 16;
   const VIS_RECOGNITION_HOLD_MS = 2500;
   const VIS_ENROLL_GUIDANCE_BUCKETS = ["center", "left", "right", "up", "down", "close"];
@@ -159,6 +160,8 @@
   let visUnknownFaceSince = 0;
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
   let visBackendRequestBusy = false;
+  let visBackendBackoffUntil = 0;
+  let visLastBackendError = "";
   let visLastFaceSeenAt = 0;
   let visLastEmotion = "neutral";
   let visLightingLow = false;
@@ -1178,6 +1181,15 @@
     return data;
   }
 
+  function isVisBackendBusyError(error) {
+    const message = String((error && error.message) || error || "").toLowerCase();
+    return (
+      message.includes("usage_exceeded") ||
+      message.includes("http_503") ||
+      message.includes("service unavailable")
+    );
+  }
+
   function captureVisFrameDataUrl() {
     if (!visVideoEl || !visVideoEl.videoWidth || !visVideoEl.videoHeight) return "";
     const canvas = getVisProcessingCanvas();
@@ -1208,6 +1220,7 @@
           emotion: result && result.emotion ? result.emotion : "neutral",
         };
       } catch (error) {
+        if (isVisBackendBusyError(error)) throw error;
         const detect = await postVisJson(getVisEndpoint("__VIS_DETECT_FACE_URL", "/detect-face"), { image: image });
         if (!detect || !detect.face_detected) {
           return {
@@ -3149,7 +3162,13 @@
         }
       }
       if (!visIndexLoaded) await loadVisProfilesFromCloud();
+      if (visBackendBackoffUntil > Date.now()) {
+        setVisScanStatus("VIS backend busy - retrying", { label: "Offline", offline: true });
+        return;
+      }
       const result = await processVisBackendFrame();
+      visLastBackendError = "";
+      visBackendBackoffUntil = 0;
       if (!result || !result.faceDetected) {
         if (visLastRecognitionAt && (Date.now() - visLastRecognitionAt) < VIS_RECOGNITION_HOLD_MS && visActiveProfile) {
           setVisScanStatus("Recognized user: " + String(visLastKnownUserLabel || "User"), { label: "Scanning", offline: false });
@@ -3194,6 +3213,12 @@
       }
       await handleVisRecognitionVector(result);
     } catch (e) {
+      if (isVisBackendBusyError(e)) {
+        visLastBackendError = String((e && e.message) || e || "usage_exceeded");
+        visBackendBackoffUntil = Date.now() + VIS_BACKEND_BUSY_RETRY_MS;
+        visFacePresent = false;
+        setVisScanStatus("VIS backend busy - retrying", { label: "Offline", offline: true });
+      }
       dbg("VIS frame processing failed", e && e.message);
     } finally {
       visDetectBusy = false;
