@@ -1898,6 +1898,20 @@
     setVisOfflineState(true, reason || "Offline - no face");
   }
 
+  function setVisScanStatus(message, options) {
+    const opts = options && typeof options === "object" ? options : {};
+    const offline = opts.offline !== false;
+    const label = String(opts.label || "Scanning");
+    const reason = String(message || label || "Scanning");
+    orbBtn.classList.remove("idle", "listening", "thinking", "speaking");
+    orbBtn.classList.add("idle");
+    panel.classList.remove("state-idle", "state-listening", "state-thinking", "state-speaking");
+    panel.classList.add("state-idle");
+    assistantState = "idle";
+    stateEl.textContent = label;
+    setVisOfflineState(offline, reason);
+  }
+
   function buildRemainingSpeakTextFromCurrentPlayback() {
     const full = String((visSpeechState && visSpeechState.text) || "").trim();
     if (!full) return "";
@@ -2734,19 +2748,20 @@
 
   async function handleVisRecognitionVector(result) {
     if (!result || !result.faceDetected) {
-      setAssistantStateForVisOffline("Recognizing user...");
+      setVisScanStatus("No Face Detected", { label: "Offline", offline: true });
       return;
     }
+    setVisScanStatus("Face Detected", { label: "Scanning", offline: true });
     const userId = String(result.user_id || "");
     if (!userId) {
       visNoMatchCount += 1;
       if (visNoMatchCount >= VIS_MATCH_STABLE_COUNT) {
         if (visExpectedProfileFile) {
-          setAssistantStateForVisOffline("Recognizing user...");
+          setVisScanStatus("Recognizing user", { label: "Scanning", offline: true });
         } else {
           if (!visUnknownFaceSince) visUnknownFaceSince = Date.now();
           if (Date.now() - visUnknownFaceSince > 2500) {
-            setAssistantStateForVisOffline("Offline - unrecognized face");
+            setVisScanStatus("User Not Registered", { label: "Scanning", offline: true });
             if (!visSetupOpen && !visPersonalizeOpen) openVisSetup();
           }
         }
@@ -2761,7 +2776,7 @@
       visRecognitionCandidate = { profileFile: userId, count: 1 };
     }
     if (visRecognitionCandidate.count < VIS_MATCH_STABLE_COUNT) {
-      setAssistantStateForVisOffline("Recognizing user...");
+      setVisScanStatus("Recognizing user", { label: "Scanning", offline: true });
       return;
     }
     dbg("recognized user = true");
@@ -2777,8 +2792,12 @@
       });
       if (hit && hit.profile) profile = hit.profile;
       if (!profile) profile = await fetchVisProfileFromRepo(userId + VIS_PROFILE_EXTENSION);
-      if (profile) await switchToVisProfile(profile);
+      if (profile) {
+        setVisScanStatus("Recognized user: " + userId, { label: "Scanning", offline: false });
+        await switchToVisProfile(profile);
+      }
     } else {
+      setVisScanStatus("Recognized user: " + userId, { label: "Scanning", offline: false });
       if (visOffline) await resumeFromVisOnline();
       if (visActiveProfile) ensureVisPersonalAgent(visActiveProfile, "recognition");
     }
@@ -2794,18 +2813,19 @@
         visFacePresent = false;
         visRecognitionCandidate = { profileFile: "", count: 0 };
         visNoMatchCount = 0;
-        pauseForVisOffline("Offline - no face");
+        pauseForVisOffline("No Face Detected");
         return;
       }
       if (!result.liveness_passed) {
         visFacePresent = false;
         visRecognitionCandidate = { profileFile: "", count: 0 };
         visNoMatchCount = 0;
-        setAssistantStateForVisOffline("Scanning for a live face...");
+        setVisScanStatus("Face Detected", { label: "Scanning", offline: true });
         return;
       }
       visLastFaceSeenAt = Date.now();
       visFacePresent = true;
+      setVisScanStatus("Face Detected", { label: "Scanning", offline: true });
       const emotion = topEmotionLabel(result.emotion || {});
       if (emotion && emotion !== visLastEmotion) {
         visLastEmotion = emotion;
@@ -2815,9 +2835,9 @@
         updateTopStatusLabel();
       }
       if (Array.isArray(visRecognitionIndex) && visRecognitionIndex.length === 0) {
+        setVisScanStatus("Starting setup", { label: "Scanning", offline: true });
         if (!visSetupOpen) openVisSetup();
         else maybeOpenVisSetupForFirstRun("no_index");
-        setAssistantStateForVisOffline("Offline - no visual identity on record");
         return;
       }
       await handleVisRecognitionVector(result);
