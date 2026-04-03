@@ -1158,6 +1158,9 @@
   function getVisEndpoint(globalKey, fallback) {
     const direct = window[globalKey];
     if (typeof direct === "string" && direct.trim()) return direct.trim();
+    if (typeof fallback === "string" && fallback.trim()) {
+      return fallback.trim();
+    }
     if (window.Api && typeof window.Api.getBaseUrl === "function") {
       return window.Api.getBaseUrl() + fallback;
     }

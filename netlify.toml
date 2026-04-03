@@ -124,6 +124,31 @@
   to = "/.netlify/functions/voice_recognize"
   status = 200
 
+[[redirects]]
+  from = "/process-face"
+  to = "/.netlify/functions/process_face"
+  status = 200
+
+[[redirects]]
+  from = "/detect-face"
+  to = "/.netlify/functions/detect_face"
+  status = 200
+
+[[redirects]]
+  from = "/recognize-user"
+  to = "/.netlify/functions/recognize_user"
+  status = 200
+
+[[redirects]]
+  from = "/register-user"
+  to = "/.netlify/functions/register_user"
+  status = 200
+
+[[redirects]]
+  from = "/analyze-emotion"
+  to = "/.netlify/functions/analyze_emotion"
+  status = 200
+
 # Basic headers for HTML/CSS/JS
 [[headers]]
   for = "/*"
