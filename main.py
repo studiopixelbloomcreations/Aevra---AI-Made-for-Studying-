@@ -67,6 +67,7 @@ _default_allowed_origins = {
     "http://localhost:5500",
     "http://127.0.0.1:8000",
     "http://localhost:8000",
+    "https://tutorv1.netlify.app",
     "https://tutorv6.netlify.app",
     "https://officialtutorai.netlify.app",
 }
