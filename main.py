@@ -62,10 +62,20 @@ if not _is_vercel:
         return RedirectResponse(url="/app/")
 
 # Enable CORS
+_default_allowed_origins = {
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "https://tutorv6.netlify.app",
+    "https://officialtutorai.netlify.app",
+}
 _allowed_origins_env = os.environ.get("ALLOWED_ORIGINS")
-_allowed_origins = ["*"]
 if _allowed_origins_env:
-    _allowed_origins = [o.strip() for o in _allowed_origins_env.split(",") if o.strip()]
+    _configured_origins = {o.strip() for o in _allowed_origins_env.split(",") if o.strip()}
+    _allowed_origins = sorted(_default_allowed_origins | _configured_origins)
+else:
+    _allowed_origins = sorted(_default_allowed_origins)
 
 app.add_middleware(
     CORSMiddleware,
