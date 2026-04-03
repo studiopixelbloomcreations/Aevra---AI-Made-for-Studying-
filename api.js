@@ -1,9 +1,17 @@
 // api.js
 (function(){
   const LOCAL_DEFAULT_BASE = 'http://127.0.0.1:8000';
+  const HOSTED_DEFAULT_BASE = 'https://grade9-ai-tutor-api-production.up.railway.app';
 
   function isLoopbackHost(hostname){
     return hostname === 'localhost' || hostname === '127.0.0.1';
+  }
+
+  function isHostedFrontendHost(hostname){
+    return typeof hostname === 'string' && (
+      hostname.endsWith('.netlify.app') ||
+      hostname.endsWith('.netlify.live')
+    );
   }
 
   function normalizeConfiguredBase(value){
@@ -48,7 +56,12 @@
     // If opened from file://, we must use a concrete server URL
     if(window.location.protocol === 'file:') return LOCAL_DEFAULT_BASE;
 
-    // If served over HTTPS (Netlify/Vercel/Replit/etc), avoid mixed-content by using same-origin
+    // Hosted frontend should talk to the deployed Railway backend by default.
+    if(window.location.protocol === 'https:' && isHostedFrontendHost(host)){
+      return HOSTED_DEFAULT_BASE;
+    }
+
+    // If served over HTTPS from the backend itself or another custom host, use same-origin.
     if(window.location.protocol === 'https:') return window.location.origin;
 
     // If served from a localhost dev server (or the API itself), use same-origin
