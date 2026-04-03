@@ -3,6 +3,8 @@ const { autoEvolveToGitHub } = require("./personal_intelligence_evolution/cloud_
 const { CloudStateStore } = require("./personal_intelligence_evolution/cloud_state_store");
 const { appendObservabilityEvent } = require("./personal_intelligence_evolution/observability");
 const { enforceRateLimit } = require("./personal_intelligence_evolution/security_ops");
+const { analyzeInput } = require("../../core/observatory");
+const { coordinateAgentHarmony } = require("../../core/agent_harmony");
 
 function json(statusCode, obj) {
   return {
@@ -321,6 +323,11 @@ exports.handler = async function handler(event) {
 
   const extractedUpdates = detectMemoryUpdates(message);
   const combinedKnownFacts = mergeKnownFacts(incomingKnownFacts, extractedUpdates);
+  const observatory = analyzeInput(message, {
+    history,
+    user_id: payload && payload.user_id,
+    unique_identifier: payload && payload.unique_identifier,
+  });
   const action = detectAction(message, history, combinedKnownFacts);
   const actionUpdates = {};
   if (action && action.home_address) actionUpdates.home_address = String(action.home_address);
@@ -337,6 +344,9 @@ exports.handler = async function handler(event) {
   const aiError = cloudEvolveOnly ? "" : (action ? "" : String(llm.error || ""));
   const latencyMs = Math.max(0, Date.now() - startedAt);
   const runtimeMode = "cloud_only";
+  const harmony = await coordinateAgentHarmony(observatory, {
+    seedAnswer: answer,
+  });
 
   let evolutionMeta = null;
   try {
@@ -428,6 +438,8 @@ exports.handler = async function handler(event) {
     research_report_id: evolutionMeta && evolutionMeta.research_report_id ? evolutionMeta.research_report_id : undefined,
     governance_decision_id: evolutionMeta && evolutionMeta.governance_decision_id ? evolutionMeta.governance_decision_id : undefined,
     runtime_mode: runtimeMode,
+    observatory,
+    agent_harmony: harmony,
     cloud_evolution: cloudEvolution || undefined,
   });
 };

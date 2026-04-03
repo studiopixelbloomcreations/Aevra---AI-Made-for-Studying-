@@ -797,6 +797,7 @@
       await saveVisProfileToCloud(profile);
     }
     await createVisProfileArtifactInRepo(profile);
+    await savePiUserConfig(profile, safeAnswers);
     return true;
   }
 
@@ -2209,6 +2210,7 @@
 
   async function switchToVisProfile(profile) {
     if (!profile || !profile.file_name) return;
+    const hydratedProfile = await hydratePiUserConfig(profile);
     const nextFile = String(profile.file_name);
     const currentFile = visActiveProfile && visActiveProfile.file_name ? String(visActiveProfile.file_name) : "";
     if (currentFile && currentFile !== nextFile && visSpeechState.active) {
@@ -2218,7 +2220,7 @@
       visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
     }
     if (currentFile && currentFile !== nextFile) await persistActiveVisProfileNow();
-    applyVisProfileToRuntime(profile);
+    applyVisProfileToRuntime(hydratedProfile || profile);
     setVisOfflineState(false, "Online - " + visLastKnownUserLabel);
     showVisWelcome(visLastKnownUserLabel);
     if (visActiveProfile) {
@@ -2230,6 +2232,55 @@
     }
     await resumeFromVisOnline();
     ensureVisPersonalAgent(visActiveProfile, "profile_switch");
+  }
+
+  async function savePiUserConfig(profile, answers) {
+    if (!profile) return null;
+    const userId = String((profile.user_identity && profile.user_identity.username) || profile.file_name || "").trim();
+    if (!userId) return null;
+    try {
+      return await fetchJson("/personal-intelligence/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          answers: answers || {},
+          profile: profile,
+          known_facts: knownFacts || {},
+        }),
+      });
+    } catch (e) {
+      dbg("PI config save failed", e && e.message);
+      return null;
+    }
+  }
+
+  function mergePiConfigIntoProfile(profile, config) {
+    if (!profile || !config || typeof config !== "object") return profile;
+    const next = Object.assign({}, profile);
+    next.personalization_profile = Object.assign({}, next.personalization_profile || {}, config.preferences || {});
+    next.ai_behavior_configuration = Object.assign({}, next.ai_behavior_configuration || {}, config.ai_behavior || {});
+    next.learned_preferences = Object.assign({}, next.learned_preferences || {}, (config.memory && config.memory.facts) || {});
+    next.personal_intelligence_agent = Object.assign({}, next.personal_intelligence_agent || {}, {
+      cloud_config: config,
+      unique_identifier: config.unique_identifier || "",
+    });
+    return next;
+  }
+
+  async function hydratePiUserConfig(profile) {
+    const userId = String((profile && profile.user_identity && profile.user_identity.username) || profile.file_name || "").trim();
+    if (!userId) return profile;
+    try {
+      const out = await fetchJson("/personal-intelligence/config?user_id=" + encodeURIComponent(userId), {
+        method: "GET",
+      });
+      if (!out || !out.config) return profile;
+      return mergePiConfigIntoProfile(profile, out.config.user_config || out.config);
+    } catch (e) {
+      dbg("PI config hydrate failed", e && e.message);
+      return profile;
+    }
   }
 
   async function detectFacesFromVideo() {
