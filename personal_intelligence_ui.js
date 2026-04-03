@@ -1158,6 +1158,31 @@
     return String(label || "neutral").toLowerCase();
   }
 
+  function topEmotionLabel(value) {
+    if (!value) return "neutral";
+    if (typeof value === "string") return String(value || "neutral").toLowerCase();
+    if (Array.isArray(value)) return extractDominantEmotion({ emotion: value });
+    if (typeof value === "object") {
+      if (Array.isArray(value.emotion) || Array.isArray(value.expressions)) {
+        return extractDominantEmotion(value);
+      }
+      let bestLabel = "neutral";
+      let bestScore = -1;
+      const keys = Object.keys(value);
+      for (let i = 0; i < keys.length; i += 1) {
+        const key = keys[i];
+        const score = Number(value[key]);
+        if (!Number.isFinite(score)) continue;
+        if (score > bestScore) {
+          bestScore = score;
+          bestLabel = key;
+        }
+      }
+      return String(bestLabel || "neutral").toLowerCase();
+    }
+    return "neutral";
+  }
+
   function blendshapeToEmotion(blendshapes) {
     if (!blendshapes || !blendshapes.length) return [];
     const scores = {};
@@ -2839,7 +2864,7 @@
         visFacePresent = false;
         visRecognitionCandidate = { profileFile: "", count: 0 };
         visNoMatchCount = 0;
-        setVisScanStatus("Face Detected", { label: "Scanning", offline: true });
+        setVisScanStatus("No Live Face Detected", { label: "Offline", offline: true });
         return;
       }
       visLastFaceSeenAt = Date.now();
