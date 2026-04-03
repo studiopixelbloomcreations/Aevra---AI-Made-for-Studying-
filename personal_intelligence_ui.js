@@ -170,7 +170,10 @@
   let visLastBackendError = "";
   let visFaceApiLoadPromise = null;
   let visFaceApiReady = false;
+  let visFaceApiExpressionReady = false;
+  let visFaceApiExpressionPromise = null;
   let visLivenessSamples = [];
+  let visFaceApiStartupStartedAt = 0;
   let visLastFaceSeenAt = 0;
   let visLastEmotion = "neutral";
   let visLightingLow = false;
@@ -1231,6 +1234,7 @@
     if (VIS_ACTIVE_FACE_ENGINE !== "faceapi") return false;
     if (visFaceApiReady && window.faceapi) return true;
     if (visFaceApiLoadPromise) return visFaceApiLoadPromise;
+    if (!visFaceApiStartupStartedAt) visFaceApiStartupStartedAt = Date.now();
     visFaceApiLoadPromise = (async function () {
       await loadExternalScriptOnce(VIS_FACE_API_SCRIPT_URL, "piFaceApiScript");
       if (!window.faceapi) throw new Error("face-api.js unavailable");
@@ -1238,11 +1242,12 @@
         window.faceapi.nets.tinyFaceDetector.loadFromUri(VIS_FACE_API_MODEL_URL),
         window.faceapi.nets.faceLandmark68Net.loadFromUri(VIS_FACE_API_MODEL_URL),
         window.faceapi.nets.faceRecognitionNet.loadFromUri(VIS_FACE_API_MODEL_URL),
-        window.faceapi.nets.faceExpressionNet.loadFromUri(VIS_FACE_API_MODEL_URL),
       ]);
       visFaceApiReady = true;
       visLastBackendError = "";
-      pushVisDebug("face-api.js ready");
+      dbg("face-api.js core ready");
+      pushVisDebug("face-api.js core ready");
+      ensureVisFaceApiExpressionsReady().catch(function () {});
       return true;
     })().catch(function (error) {
       visFaceApiReady = false;
@@ -1252,6 +1257,26 @@
       return false;
     });
     return visFaceApiLoadPromise;
+  }
+
+  async function ensureVisFaceApiExpressionsReady() {
+    if (VIS_ACTIVE_FACE_ENGINE !== "faceapi") return false;
+    if (visFaceApiExpressionReady && window.faceapi) return true;
+    if (visFaceApiExpressionPromise) return visFaceApiExpressionPromise;
+    visFaceApiExpressionPromise = (async function () {
+      await ensureVisFaceApiReady();
+      await window.faceapi.nets.faceExpressionNet.loadFromUri(VIS_FACE_API_MODEL_URL);
+      visFaceApiExpressionReady = true;
+      dbg("face-api.js expressions ready");
+      pushVisDebug("face-api.js expressions ready");
+      return true;
+    })().catch(function (error) {
+      visFaceApiExpressionReady = false;
+      visFaceApiExpressionPromise = null;
+      dbg("face-api.js expressions load failed", error && error.message);
+      return false;
+    });
+    return visFaceApiExpressionPromise;
   }
 
   function averagePoint(points, name) {
@@ -1404,17 +1429,16 @@
       throw new Error(visLastBackendError || "face-api unavailable");
     }
     const faceapi = window.faceapi;
-    const detections = await faceapi
-      .detectAllFaces(
-        visVideoEl,
-        new faceapi.TinyFaceDetectorOptions({
-          inputSize: VIS_FACE_API_INPUT_SIZE,
-          scoreThreshold: VIS_FACE_API_SCORE_THRESHOLD,
-        })
-      )
-      .withFaceLandmarks()
-      .withFaceExpressions()
-      .withFaceDescriptors();
+    const detector = faceapi.detectAllFaces(
+      visVideoEl,
+      new faceapi.TinyFaceDetectorOptions({
+        inputSize: VIS_FACE_API_INPUT_SIZE,
+        scoreThreshold: VIS_FACE_API_SCORE_THRESHOLD,
+      })
+    ).withFaceLandmarks();
+    const detections = visFaceApiExpressionReady
+      ? await detector.withFaceExpressions().withFaceDescriptors()
+      : await detector.withFaceDescriptors();
     const vw = Number(visVideoEl.videoWidth || 0);
     const vh = Number(visVideoEl.videoHeight || 0);
     const faces = (Array.isArray(detections) ? detections : []).map(function (item) {
@@ -3675,10 +3699,10 @@
     closeVisTestStage();
     visAllowTestingStage = false;
     visPendingEnrollmentPayload = null;
-    if (VIS_ACTIVE_FACE_ENGINE === "faceapi") {
-      ensureVisFaceApiReady().catch(function () {});
-    }
-    await loadVisProfilesFromCloud();
+    const faceStartupPromise = VIS_ACTIVE_FACE_ENGINE === "faceapi"
+      ? ensureVisFaceApiReady().catch(function () { return false; })
+      : Promise.resolve(false);
+    const indexLoadPromise = loadVisProfilesFromCloud().catch(function () { return []; });
     window.PI_VIS_HOOKS = {
       isManagedFlowActive: function () {
         return !!(
@@ -3747,12 +3771,21 @@
           registered_faces: 0,
         };
       },
-      };
+    };
     setVisScanStatus("Requesting camera access", { label: "Scanning", offline: true });
     try {
-      await ensureVisCameraReady();
+      await Promise.allSettled([
+        ensureVisCameraReady(),
+        faceStartupPromise,
+        indexLoadPromise,
+      ]);
     } catch (e) {
       dbg("VIS initial camera bootstrap failed", e && e.message);
+    }
+    if (VIS_ACTIVE_FACE_ENGINE === "faceapi" && visFaceApiReady) {
+      const startupMs = visFaceApiStartupStartedAt ? (Date.now() - visFaceApiStartupStartedAt) : 0;
+      dbg("face-api.js startup complete", startupMs + "ms");
+      pushVisDebug("face-api.js startup complete in " + String(startupMs) + "ms");
     }
     setVisOfflineState(true, "Scanning for face...");
     scheduleVisFrameLoop(300);
