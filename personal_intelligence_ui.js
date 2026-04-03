@@ -51,6 +51,7 @@
   const VIS_FACE_API_MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
   const VIS_FACE_API_MIN_CONFIDENCE = 0.5;
   const VIS_FACE_API_MATCH_DISTANCE = 0.58;
+  const VIS_ENROLL_UNLOCK_CONFIDENCE = 0.5;
   function isOffline() {
     return window.__OFFLINE_MODE__ === true || navigator.onLine === false;
   }
@@ -204,6 +205,7 @@
     enrollmentCoverage: {},
     enrollmentInstruction: "",
     enrollmentCaptured: 0,
+    enrollmentConfidence: 0,
   };
   let visPersonalizeOpen = false;
   let visPersonalizeState = {
@@ -352,6 +354,16 @@
   const hiddenFileInput = panel.querySelector(".pi-hidden-file-input");
   visVideoEl = panel.querySelector(".pi-vis-video");
   visCanvasEl = panel.querySelector(".pi-vis-canvas");
+  if (visVideoEl) {
+    visVideoEl.style.transform = "scaleX(-1)";
+    visVideoEl.style.transformOrigin = "center center";
+    visVideoEl.style.backfaceVisibility = "hidden";
+  }
+  if (visCanvasEl) {
+    visCanvasEl.style.transform = "scaleX(-1)";
+    visCanvasEl.style.transformOrigin = "center center";
+    visCanvasEl.style.backfaceVisibility = "hidden";
+  }
   visSetupEl = panel.querySelector(".pi-vis-setup-backdrop");
   visTestEl = panel.querySelector(".pi-vis-test-backdrop");
   visPersonalizeEl = panel.querySelector(".pi-vis-personalize-backdrop");
@@ -3211,6 +3223,7 @@
       enrollmentCoverage: {},
       enrollmentInstruction: "",
       enrollmentCaptured: 0,
+      enrollmentConfidence: 0,
     });
     setAssistantStateForVisOffline("Setup required - enroll visual identity");
     panel.classList.add("pi-vis-setup-open");
@@ -3288,7 +3301,8 @@
         '<div class="pi-vis-note">' + instruction.replace(/[<>&]/g, function (ch) {
           return ch === "<" ? "&lt;" : (ch === ">" ? "&gt;" : "&amp;");
         }) + '</div>' +
-        '<div class="pi-vis-note">Native samples captured: ' + String(captured) + " / " + String(VIS_SCAN_FRAME_COUNT) + ".</div>";
+        '<div class="pi-vis-note">Native samples captured: ' + String(captured) + " / " + String(VIS_SCAN_FRAME_COUNT) + ".</div>" +
+        '<div class="pi-vis-note">Live confidence: ' + Number(visSetupState.enrollmentConfidence || 0).toFixed(2) + ' / ' + VIS_ENROLL_UNLOCK_CONFIDENCE.toFixed(2) + '.</div>';
       const bar = body.querySelector(".pi-vis-progress-bar");
       if (bar) bar.style.width = pct + "%";
     }
@@ -3471,6 +3485,7 @@
     visSetupState.step = 4;
     visSetupState.enrollmentCoverage = {};
     visSetupState.enrollmentCaptured = 0;
+    visSetupState.enrollmentConfidence = 0;
     visSetupState.enrollmentInstruction = "Keep your face inside the frame while face-api.js scans.";
     try { renderVisSetup(); } catch (e) { pushVisDebug("scan step render failed: " + String((e && e.message) || e)); }
     pushVisDebug("Face scan started (face-api.js browser runtime).");
@@ -3518,6 +3533,7 @@
         continue;
       }
       const primaryFace = selectPrimaryFace(detect.faces);
+      visSetupState.enrollmentConfidence = Number(primaryFace && primaryFace.confidence || 0);
       renderVisTrackingOverlay(detect.faces, primaryFace);
       const faceDescriptor = primaryFace && Array.isArray(primaryFace.descriptor) ? primaryFace.descriptor.slice(0) : [];
       if (!faceDescriptor.length) {
@@ -3541,6 +3557,10 @@
       visSetupState.enrollmentCaptured = descriptors.length;
       visSetupState.enrollmentInstruction = "Capturing native face-api.js samples: " + String(descriptors.length) + " / " + String(VIS_SCAN_FRAME_COUNT) + ".";
       try { renderVisSetup(); } catch (e) {}
+      if (Number(primaryFace && primaryFace.confidence || 0) >= VIS_ENROLL_UNLOCK_CONFIDENCE && descriptors.length) {
+        pushVisDebug("Enrollment unlocked at confidence " + Number(primaryFace && primaryFace.confidence || 0).toFixed(2));
+        break;
+      }
       if (idleLoops > 150) {
         break;
       }
