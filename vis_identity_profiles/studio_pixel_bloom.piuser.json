@@ -16,26 +16,26 @@
     ],
     "preferred_interaction_style": "energetic",
     "hobbies": [
-      "f"
+      "gaming"
     ],
-    "timezone_or_city": "f",
+    "timezone_or_city": "kurunegala",
     "favorite_subjects": [
-      "f"
+      "ICT"
     ]
   },
   "conversation_memory": {
     "history": [],
     "important_facts": {
-      "goals": "f",
-      "hobbies": "f",
-      "full_name": "f",
-      "interests": "f",
-      "learning_style": "f",
-      "preferred_name": "f",
-      "preferred_tone": "f",
-      "timezone_or_city": "f",
-      "favorite_subjects": "f",
-      "preferred_language": "f"
+      "goals": "improve grades",
+      "hobbies": "gaming",
+      "full_name": "thenuja premasiri",
+      "interests": "robotics",
+      "learning_style": "step by step",
+      "preferred_name": "pixel bloom",
+      "preferred_tone": "energetic",
+      "timezone_or_city": "kurunegala",
+      "favorite_subjects": "ICT",
+      "preferred_language": "english"
     }
   },
   "face_registration": {
@@ -44,10 +44,10 @@
   },
   "session_state": {
     "pending_response": null,
-    "assistant_state": "listening",
-    "paused": false,
+    "assistant_state": "idle",
+    "paused": true,
     "pending_messages": [],
-    "last_active_timestamp": "2026-04-03T14:41:10.613Z",
+    "last_active_timestamp": "2026-04-03T14:42:32.043Z",
     "speech_state": {
       "active": false,
       "text": "",
@@ -103,11 +103,11 @@
     "humor_professional_balance": "balanced",
     "response_length_preference": "balanced",
     "technical_explanation_depth": "adaptive",
-    "tone": "f",
+    "tone": "energetic",
     "goals": [
-      "f"
+      "improve grades"
     ],
-    "response_style": "f"
+    "response_style": "step by step"
   },
   "personal_intelligence_agent": {
     "status": "ready",
@@ -135,6 +135,69 @@
       "hobbies",
       "timezone_or_city",
       "preferred_language"
-    ]
+    ],
+    "cloud_config": {
+      "memory": {
+        "facts": {
+          "goals": "improve grades",
+          "hobbies": "gaming",
+          "full_name": "thenuja premasiri",
+          "interests": "robotics",
+          "learning_style": "step by step",
+          "preferred_name": "pixel bloom",
+          "preferred_tone": "energetic",
+          "timezone_or_city": "kurunegala",
+          "favorite_subjects": "ICT",
+          "preferred_language": "english"
+        },
+        "profile_file": "studio_pixel_bloom.piuser.json",
+        "personalization_answers": {
+          "goals": "improve grades",
+          "hobbies": "gaming",
+          "full_name": "thenuja premasiri",
+          "interests": "robotics",
+          "learning_style": "step by step",
+          "preferred_name": "pixel bloom",
+          "preferred_tone": "energetic",
+          "timezone_or_city": "kurunegala",
+          "favorite_subjects": "ICT",
+          "preferred_language": "english"
+        }
+      },
+      "prompt": "User Profile:\n- Interests: robotics\n- Communication style: energetic\n- Preferences: ICT\n- Behavior patterns: step by step\n- Goals: improve grades\nGenerate a structured user_config.json object.",
+      "user_id": "studio_pixel_bloom",
+      "interests": [
+        "robotics"
+      ],
+      "ai_behavior": {
+        "tone": "energetic",
+        "goals": [
+          "improve grades"
+        ],
+        "response_style": "step by step"
+      },
+      "preferences": {
+        "hobbies": [
+          "gaming"
+        ],
+        "timezone_or_city": "kurunegala",
+        "favorite_subjects": [
+          "ICT"
+        ]
+      },
+      "unique_identifier": "studio_pixel_bloom_a8d41f5260d9c12f449f6a42",
+      "personality_traits": [
+        "energetic",
+        "structured"
+      ],
+      "communication_style": {
+        "tone": "energetic",
+        "learning_style": "step by step",
+        "preferred_name": "pixel bloom",
+        "preferred_language": "english"
+      },
+      "source_profile_file": "studio_pixel_bloom.piuser.json"
+    },
+    "unique_identifier": "studio_pixel_bloom_a8d41f5260d9c12f449f6a42"
   }
 }
