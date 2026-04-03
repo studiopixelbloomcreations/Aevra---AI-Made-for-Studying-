@@ -184,9 +184,9 @@
   "session_state": {
     "pending_response": null,
     "pending_messages": [],
-    "last_active_timestamp": "2026-04-03T17:42:59.078Z",
-    "paused": false,
-    "assistant_state": "listening",
+    "last_active_timestamp": "2026-04-03T17:43:51.632Z",
+    "paused": true,
+    "assistant_state": "idle",
     "speech_state": {
       "active": false,
       "text": "",
@@ -198,6 +198,7 @@
       "profile_file": "studio_pixel_bloom.piuser.json",
       "runtime_key": "vis_instance_studio_pixel_bloom.piuser.json_mnj6z4ya",
       "loaded_at": "2026-04-03T17:42:58.258Z"
-    }
+    },
+    "pause_reason": "No Face Detected"
   }
 }
