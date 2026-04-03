@@ -466,6 +466,10 @@
     visCanvasEl.style.pointerEvents = "none";
     visCanvasEl.style.borderRadius = "18px";
     visCanvasEl.style.transform = "scaleX(-1)";
+    visCanvasEl.style.opacity = "1";
+    visCanvasEl.style.visibility = "visible";
+    visCanvasEl.style.left = "0";
+    visCanvasEl.style.top = "0";
     visCanvasEl.style.zIndex = "2";
     try {
       Promise.resolve(visVideoEl.play()).catch(function () {});
