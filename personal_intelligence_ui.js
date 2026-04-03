@@ -140,6 +140,8 @@
   let visLastRecognitionAt = 0;
   let visTestEl = null;
   let visPersonalizeEl = null;
+  let visDebugPreviewEl = null;
+  let visDebugPreviewOpen = false;
   let visVerificationBusy = false;
   let visVerificationProfile = null;
   let visAllowTestingStage = false;
@@ -291,6 +293,21 @@
         <div class="pi-vis-personalize-body"></div>
       </div>
     </div>
+    <div class="pi-vis-debug-backdrop" hidden>
+      <div class="pi-vis-debug-panel" role="dialog" aria-modal="false" aria-labelledby="piVisDebugTitle" style="width:min(760px,92vw);background:rgba(6,13,27,0.94);border:1px solid rgba(96,165,250,0.35);border-radius:22px;box-shadow:0 24px 80px rgba(2,6,23,0.55);padding:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div>
+            <div id="piVisDebugTitle" style="font-size:18px;font-weight:700;color:#e2e8f0;">Camera Box Debug</div>
+            <div style="font-size:13px;color:#94a3b8;">Live camera feed with backend face box and landmark overlay.</div>
+          </div>
+          <button type="button" class="pi-vis-btn ghost" data-vis-debug="close">Close</button>
+        </div>
+        <div class="pi-vis-camera-stage" style="position:relative;border-radius:18px;overflow:hidden;border:1px solid rgba(96,165,250,0.35);background:#020617;">
+          <div class="pi-vis-camera-mount" style="position:relative;width:100%;aspect-ratio:4/3;min-height:320px;"></div>
+        </div>
+        <div class="pi-vis-note" style="margin-top:12px;">Run <code>ShowCameraBox()</code> in the browser console to open this view.</div>
+      </div>
+    </div>
   `;
   document.body.appendChild(panel);
 
@@ -312,6 +329,7 @@
   visSetupEl = panel.querySelector(".pi-vis-setup-backdrop");
   visTestEl = panel.querySelector(".pi-vis-test-backdrop");
   visPersonalizeEl = panel.querySelector(".pi-vis-personalize-backdrop");
+  visDebugPreviewEl = panel.querySelector(".pi-vis-debug-backdrop");
   if (visTestEl) visTestEl.hidden = true;
   const textInputEl = panel.querySelector(".pi-text-input");
   const textSendBtn = panel.querySelector(".pi-input-send");
@@ -385,6 +403,35 @@
     visCanvasEl.style.pointerEvents = "none";
     visCanvasEl.style.borderRadius = "18px";
     visCanvasEl.style.transform = "scaleX(-1)";
+  }
+
+  function syncVisPreviewMount() {
+    if (visDebugPreviewOpen && visDebugPreviewEl && !visDebugPreviewEl.hidden) {
+      const debugPanel = visDebugPreviewEl.querySelector(".pi-vis-debug-panel");
+      ensureVisPreviewMounted(debugPanel);
+      return;
+    }
+    if (visSetupOpen && visSetupState.step === 4 && visSetupEl) {
+      const body = visSetupEl.querySelector(".pi-vis-setup-body");
+      ensureVisPreviewMounted(body);
+      return;
+    }
+    ensureVisPreviewMounted(null);
+  }
+
+  async function openVisDebugPreview() {
+    if (!visDebugPreviewEl) return false;
+    const ready = await ensureVisCameraReady();
+    visDebugPreviewOpen = true;
+    visDebugPreviewEl.hidden = false;
+    syncVisPreviewMount();
+    return ready;
+  }
+
+  function closeVisDebugPreview() {
+    visDebugPreviewOpen = false;
+    if (visDebugPreviewEl) visDebugPreviewEl.hidden = true;
+    syncVisPreviewMount();
   }
 
   function shouldAutoEnableLegacySetupFromPlaceholder() {
@@ -1156,6 +1203,14 @@
     const list = Array.isArray(face.landmarks) ? face.landmarks : (Array.isArray(face.keypoints) ? face.keypoints : []);
     return list.filter(function (point) {
       return point && typeof point === "object";
+    });
+  }
+  if (visDebugPreviewEl) {
+    visDebugPreviewEl.addEventListener("click", function (ev) {
+      const btn = ev && ev.target && ev.target.closest ? ev.target.closest("[data-vis-debug]") : null;
+      if (!btn) return;
+      const action = String(btn.getAttribute("data-vis-debug") || "").trim().toLowerCase();
+      if (action === "close") closeVisDebugPreview();
     });
   }
 
@@ -2670,7 +2725,7 @@
       const bar = body.querySelector(".pi-vis-progress-bar");
       if (bar) bar.style.width = pct + "%";
     }
-    ensureVisPreviewMounted(visSetupState.step === 4 ? body : null);
+    syncVisPreviewMount();
 
     const usernameInput = body.querySelector('[data-vis="username"]');
     if (usernameInput) {
@@ -4918,6 +4973,13 @@
       }
       return Array.isArray(rows) ? rows.length : 0;
     },
+  };
+  window.ShowCameraBox = async function () {
+    return openVisDebugPreview();
+  };
+  window.CloseCameraBox = function () {
+    closeVisDebugPreview();
+    return true;
   };
 
   loadMemory();
