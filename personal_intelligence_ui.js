@@ -3723,7 +3723,27 @@
         }
         return { suppress_setup_ms: this.getSetupSuppressMs() };
       },
-    };
+      getRecognitionIndex: function () {
+        return Array.isArray(visRecognitionIndex) ? visRecognitionIndex.slice(0) : [];
+      },
+      loadProfileByUserId: async function (userId) {
+        const target = String(userId || "").trim();
+        if (!target) return null;
+        const hit = (Array.isArray(visRecognitionIndex) ? visRecognitionIndex : []).find(function (row) {
+          return String((row && (row.username || row.user_id || row.profileFile)) || "") === target;
+        }) || null;
+        if (hit && hit.profile) return hit.profile;
+        return await fetchVisProfileFromRepo(target + VIS_PROFILE_EXTENSION);
+      },
+      registerFaceFrames: async function () {
+        if (!this.isManagedFlowActive()) openVisSetup();
+        return {
+          ok: false,
+          deferred_to_setup: true,
+          registered_faces: 0,
+        };
+      },
+      };
     setVisScanStatus("Requesting camera access", { label: "Scanning", offline: true });
     try {
       await ensureVisCameraReady();

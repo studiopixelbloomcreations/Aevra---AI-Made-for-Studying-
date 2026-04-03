@@ -1,8 +1,16 @@
-const DETECT_FACE_ENDPOINT = '/detect-face';
-const RECOGNIZE_USER_ENDPOINT = '/recognize-user';
-const REGISTER_USER_ENDPOINT = '/register-user';
-const ANALYZE_EMOTION_ENDPOINT = '/analyze-emotion';
 const USER_PROFILE_ENDPOINT = '/user-profile';
+const FACE_API_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+const FACE_API_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const FACE_API_INPUT_SIZE = 416;
+const FACE_API_SCORE_THRESHOLD = 0.45;
+const FACE_API_MATCH_DISTANCE = 0.58;
+
+let faceApiReadyPromise = null;
+let livenessSamples = [];
+
+function ensureHooks() {
+  return window.PI_VIS_HOOKS || {};
+}
 
 function endpoint(key, fallback) {
   const direct = window[key];
@@ -13,22 +21,48 @@ function endpoint(key, fallback) {
   return fallback;
 }
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify(payload || {})
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(String(data.error || `HTTP_${response.status}`));
-    error.status = response.status;
-    error.payload = data;
-    throw error;
+function loadScriptOnce(src, id) {
+  const existing = id ? document.getElementById(id) : null;
+  if (existing) {
+    if (existing.getAttribute('data-loaded') === 'true') return Promise.resolve(true);
+    return new Promise((resolve, reject) => {
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', () => reject(new Error('SCRIPT_LOAD_FAILED')), { once: true });
+    });
   }
-  return data;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    if (id) script.id = id;
+    script.src = src;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      script.setAttribute('data-loaded', 'true');
+      resolve(true);
+    };
+    script.onerror = () => reject(new Error('SCRIPT_LOAD_FAILED'));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureFaceApiReady() {
+  if (window.faceapi && faceApiReadyPromise) return faceApiReadyPromise;
+  if (faceApiReadyPromise) return faceApiReadyPromise;
+  faceApiReadyPromise = (async () => {
+    await loadScriptOnce(FACE_API_SCRIPT_URL, 'publicVisFaceApiScript');
+    if (!window.faceapi) throw new Error('face-api.js unavailable');
+    await Promise.all([
+      window.faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_URL),
+      window.faceapi.nets.faceLandmark68Net.loadFromUri(FACE_API_MODEL_URL),
+      window.faceapi.nets.faceRecognitionNet.loadFromUri(FACE_API_MODEL_URL),
+      window.faceapi.nets.faceExpressionNet.loadFromUri(FACE_API_MODEL_URL),
+    ]);
+    return true;
+  })().catch((error) => {
+    faceApiReadyPromise = null;
+    throw error;
+  });
+  return faceApiReadyPromise;
 }
 
 function normalizeProfile(payload, userId) {
@@ -47,6 +81,171 @@ function normalizeProfile(payload, userId) {
   };
 }
 
+function averagePoint(points, name) {
+  const list = Array.isArray(points) ? points : [];
+  if (!list.length) return null;
+  let sx = 0;
+  let sy = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    sx += Number(list[i].x || 0);
+    sy += Number(list[i].y || 0);
+  }
+  return { name, x: sx / list.length, y: sy / list.length };
+}
+
+function toNormalizedLandmarks(landmarks, vw, vh) {
+  if (!landmarks || !vw || !vh) return [];
+  const out = [];
+  const positions = Array.isArray(landmarks.positions) ? landmarks.positions : [];
+  for (let i = 0; i < positions.length; i += 1) {
+    const pt = positions[i];
+    out.push({ name: 'p' + i, x: Number(pt.x || 0) / vw, y: Number(pt.y || 0) / vh });
+  }
+  const leftEye = averagePoint(typeof landmarks.getLeftEye === 'function' ? landmarks.getLeftEye() : [], 'left_eye');
+  const rightEye = averagePoint(typeof landmarks.getRightEye === 'function' ? landmarks.getRightEye() : [], 'right_eye');
+  const nosePts = typeof landmarks.getNose === 'function' ? landmarks.getNose() : [];
+  const nose = averagePoint(nosePts.slice(Math.max(0, nosePts.length - 3)), 'nose');
+  const mouth = typeof landmarks.getMouth === 'function' ? landmarks.getMouth() : [];
+  const mouthLeft = mouth.length ? { name: 'mouth_left', x: Number(mouth[0].x || 0) / vw, y: Number(mouth[0].y || 0) / vh } : null;
+  const mouthRight = mouth.length ? { name: 'mouth_right', x: Number((mouth[6] && mouth[6].x) || 0) / vw, y: Number((mouth[6] && mouth[6].y) || 0) / vh } : null;
+  [leftEye, rightEye, nose, mouthLeft, mouthRight].forEach((pt) => {
+    if (!pt) return;
+    if (pt.name === 'left_eye' || pt.name === 'right_eye' || pt.name === 'nose') {
+      pt.x = Number(pt.x || 0) / vw;
+      pt.y = Number(pt.y || 0) / vh;
+    }
+    out.push(pt);
+  });
+  return out;
+}
+
+function estimatePoseHint(box, landmarks) {
+  const lookup = {};
+  const list = Array.isArray(landmarks) ? landmarks : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const pt = list[i];
+    const name = String(pt && pt.name || '');
+    if (name && !(name in lookup)) lookup[name] = pt;
+  }
+  const leftEye = lookup.left_eye;
+  const rightEye = lookup.right_eye;
+  const nose = lookup.nose;
+  if (leftEye && rightEye && nose) {
+    const eyeMidX = (Number(leftEye.x || 0) + Number(rightEye.x || 0)) / 2;
+    const noseDx = Number(nose.x || 0) - eyeMidX;
+    if (noseDx <= -0.03) return 'left';
+    if (noseDx >= 0.03) return 'right';
+  }
+  const x = Number(box && box.x || 0);
+  const y = Number(box && box.y || 0);
+  const w = Number(box && box.width || 0);
+  const h = Number(box && box.height || 0);
+  const cx = x + (w / 2);
+  const cy = y + (h / 2);
+  const area = w * h;
+  if (area >= 0.2) return 'close';
+  if (cx < 0.38) return 'left';
+  if (cx > 0.62) return 'right';
+  if (cy < 0.38) return 'up';
+  if (cy > 0.62) return 'down';
+  return 'center';
+}
+
+function topExpression(expressions) {
+  if (!expressions || typeof expressions !== 'object') return 'neutral';
+  let bestLabel = 'neutral';
+  let bestScore = -1;
+  Object.keys(expressions).forEach((key) => {
+    const score = Number(expressions[key]);
+    if (Number.isFinite(score) && score > bestScore) {
+      bestScore = score;
+      bestLabel = key;
+    }
+  });
+  return String(bestLabel || 'neutral').toLowerCase();
+}
+
+function descriptorDistance(a, b) {
+  const x = Array.isArray(a) ? a : [];
+  const y = Array.isArray(b) ? b : [];
+  const n = Math.min(x.length, y.length);
+  if (!n) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < n; i += 1) {
+    const d = Number(x[i] || 0) - Number(y[i] || 0);
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+function livenessSignature(face) {
+  const landmarks = Array.isArray(face.landmarks) ? face.landmarks : [];
+  const nose = landmarks.find((pt) => String(pt && pt.name || '') === 'nose') || landmarks[0] || null;
+  const box = face.box || null;
+  if (!nose || !box) return '';
+  return [
+    Math.round(Number(nose.x || 0) * 1000),
+    Math.round(Number(nose.y || 0) * 1000),
+    Math.round(Number(box.x || 0) * 1000),
+    Math.round(Number(box.y || 0) * 1000),
+    Math.round(Number(box.width || 0) * 1000),
+    Math.round(Number(box.height || 0) * 1000),
+  ].join(':');
+}
+
+function updateLiveness(face) {
+  const signature = livenessSignature(face);
+  if (!signature) {
+    livenessSamples = [];
+    return false;
+  }
+  livenessSamples.push(signature);
+  if (livenessSamples.length > 6) livenessSamples = livenessSamples.slice(-6);
+  return livenessSamples.length >= 3 && new Set(livenessSamples).size >= 2;
+}
+
+function getFaceIndex() {
+  const hooks = ensureHooks();
+  if (typeof hooks.getRecognitionIndex === 'function') {
+    const index = hooks.getRecognitionIndex();
+    if (Array.isArray(index)) return index;
+  }
+  return Array.isArray(window.__PI_VIS_FACE_INDEX__) ? window.__PI_VIS_FACE_INDEX__ : [];
+}
+
+function findDescriptorMatch(descriptor) {
+  const input = Array.isArray(descriptor) ? descriptor : [];
+  const index = getFaceIndex();
+  if (!input.length || !index.length) return null;
+  let best = null;
+  for (let i = 0; i < index.length; i += 1) {
+    const row = index[i];
+    if (!row || !Array.isArray(row.vector) || !row.vector.length) continue;
+    const model = String(row.vector_model || '').toLowerCase();
+    if (model && model !== 'faceapi') continue;
+    const distance = descriptorDistance(input, row.vector);
+    if (!best || distance < best.distance) {
+      best = {
+        user_id: row.username || row.user_id || row.profileFile || null,
+        confidence: Math.max(0, Math.round((1 - Math.min(1, distance)) * 100)),
+        similarity: Math.max(0, Math.round((1 - Math.min(1, distance)) * 100)),
+        distance,
+      };
+    }
+  }
+  if (!best || best.distance > FACE_API_MATCH_DISTANCE) return null;
+  return best;
+}
+
+async function imageElementFromDataUrl(image) {
+  return await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('IMAGE_LOAD_FAILED'));
+    img.src = image;
+  });
+}
+
 export async function processFaceFrame(image) {
   if (!image) {
     return {
@@ -55,35 +254,83 @@ export async function processFaceFrame(image) {
       confidence: 0,
       similarity: 0,
       emotion: 'neutral',
-      user_id: null
+      user_id: null,
+      faces: [],
+      liveness_passed: false
     };
   }
-  const detect = await postJson(endpoint('__VIS_DETECT_FACE_URL', DETECT_FACE_ENDPOINT), { image });
-  if (!detect.face_detected) {
+  await ensureFaceApiReady();
+  const faceapi = window.faceapi;
+  const img = await imageElementFromDataUrl(image);
+  const detections = await faceapi
+    .detectAllFaces(
+      img,
+      new faceapi.TinyFaceDetectorOptions({
+        inputSize: FACE_API_INPUT_SIZE,
+        scoreThreshold: FACE_API_SCORE_THRESHOLD,
+      })
+    )
+    .withFaceLandmarks()
+    .withFaceExpressions()
+    .withFaceDescriptors();
+  const vw = Number(img.naturalWidth || img.width || 0);
+  const vh = Number(img.naturalHeight || img.height || 0);
+  const faces = (Array.isArray(detections) ? detections : []).map((item) => {
+    const box = item && item.detection && item.detection.box ? item.detection.box : null;
+    const normalizedBox = box ? {
+      x: Number(box.x || 0) / Math.max(1, vw),
+      y: Number(box.y || 0) / Math.max(1, vh),
+      width: Number(box.width || 0) / Math.max(1, vw),
+      height: Number(box.height || 0) / Math.max(1, vh),
+    } : null;
+    const landmarks = toNormalizedLandmarks(item && item.landmarks, vw, vh);
+    return {
+      confidence: Number(item && item.detection && item.detection.score || 0),
+      box: normalizedBox,
+      landmarks,
+      pose_hint: normalizedBox ? estimatePoseHint(normalizedBox, landmarks) : '',
+      descriptor: Array.from((item && item.descriptor) || []),
+      expressions: item && item.expressions ? item.expressions : {},
+    };
+  }).filter((face) => !!(face && face.box && face.box.width > 0 && face.box.height > 0));
+
+  if (!faces.length) {
+    livenessSamples = [];
     return {
       faceDetected: false,
       faceToken: '',
       confidence: 0,
       similarity: 0,
       emotion: 'neutral',
-      user_id: null
+      user_id: null,
+      faces: [],
+      liveness_passed: false
     };
   }
-  const recognize = await postJson(endpoint('__VIS_RECOGNIZE_USER_URL', RECOGNIZE_USER_ENDPOINT), { image });
-  const emotion = await postJson(endpoint('__VIS_ANALYZE_EMOTION_URL', ANALYZE_EMOTION_ENDPOINT), { image });
+
+  const primary = faces[0];
+  const match = findDescriptorMatch(primary.descriptor);
+  const emotion = topExpression(primary.expressions);
+
   return {
-    faceDetected: !!detect.face_detected,
+    faceDetected: true,
     faceToken: '',
-    confidence: Number(recognize.confidence || 0),
-    similarity: Number(recognize.similarity || 0),
-    emotion: emotion.emotion || 'neutral',
-    user_id: recognize.user_id || null,
-    liveness_passed: !!recognize.liveness_passed
+    confidence: match ? Number(match.confidence || 0) : Number(primary.confidence || 0),
+    similarity: match ? Number(match.similarity || 0) : 0,
+    emotion,
+    user_id: match && match.user_id ? String(match.user_id) : null,
+    liveness_passed: updateLiveness(primary),
+    faces,
   };
 }
 
 export async function loadProfileByUserId(userId) {
   if (!userId) return null;
+  const hooks = ensureHooks();
+  if (typeof hooks.loadProfileByUserId === 'function') {
+    const profile = await hooks.loadProfileByUserId(userId);
+    if (profile) return normalizeProfile(profile, userId);
+  }
   const response = await fetch(`${endpoint('__VIS_USER_PROFILE_URL', USER_PROFILE_ENDPOINT)}/${encodeURIComponent(userId)}`);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -101,13 +348,14 @@ export async function loadProfileByUserId(userId) {
 }
 
 export async function registerFaceFrames(userId, images, profileData = {}) {
-  if (!userId) throw new Error('user_id is required');
-  if (!Array.isArray(images) || !images.length) throw new Error('images are required');
-  return postJson(endpoint('__VIS_REGISTER_USER_URL', REGISTER_USER_ENDPOINT), {
-    username: userId,
-    images,
-    personalization_profile: profileData.personalization_profile || {},
-    ai_config: profileData.ai_config || {},
-    memory: profileData.memory || {}
-  });
+  const hooks = ensureHooks();
+  if (typeof hooks.registerFaceFrames === 'function') {
+    return await hooks.registerFaceFrames(userId, images, profileData);
+  }
+  return {
+    ok: false,
+    error: 'FACE_API_REGISTRATION_REQUIRES_MANAGED_FLOW',
+    registered_faces: 0,
+  };
 }
+
