@@ -1598,6 +1598,72 @@
     return n <= 1 ? n * size : n;
   }
 
+  function landmarkByName(landmarks, name) {
+    const list = Array.isArray(landmarks) ? landmarks : [];
+    for (let i = 0; i < list.length; i += 1) {
+      if (String(list[i] && list[i].name || "") === String(name || "")) return list[i];
+    }
+    return null;
+  }
+
+  function landmarkPointAt(landmarks, idx) {
+    return landmarkByName(landmarks, "p" + String(idx));
+  }
+
+  function drawLandmarkPath(ctx, landmarks, indices, width, height, color, closePath) {
+    const points = [];
+    for (let i = 0; i < indices.length; i += 1) {
+      const point = landmarkPointAt(landmarks, indices[i]);
+      if (point) {
+        points.push({
+          x: scaleOverlayPoint(point.x, width),
+          y: scaleOverlayPoint(point.y, height),
+        });
+      }
+    }
+    if (points.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    if (closePath) ctx.closePath();
+    ctx.stroke();
+  }
+
+  function drawOfficialLandmarkOverlay(ctx, landmarks, width, height, isPrimary) {
+    const lineA = isPrimary ? "rgba(0,255,255,0.95)" : "rgba(125,211,252,0.7)";
+    const lineB = isPrimary ? "rgba(255,0,140,0.95)" : "rgba(248,250,252,0.65)";
+    const groups = [
+      { indices: [0, 1, 2, 3, 4, 5, 6, 7, 8], color: lineA, close: false },
+      { indices: [8, 9, 10, 11, 12, 13, 14, 15, 16], color: lineA, close: false },
+      { indices: [17, 18, 19, 20, 21], color: lineB, close: false },
+      { indices: [22, 23, 24, 25, 26], color: lineB, close: false },
+      { indices: [27, 28, 29, 30], color: lineA, close: false },
+      { indices: [31, 32, 33, 34, 35], color: lineA, close: false },
+      { indices: [36, 37, 38, 39, 40, 41], color: lineB, close: true },
+      { indices: [42, 43, 44, 45, 46, 47], color: lineB, close: true },
+      { indices: [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59], color: lineA, close: true },
+      { indices: [60, 61, 62, 63, 64, 65, 66, 67], color: lineB, close: true },
+    ];
+    for (let i = 0; i < groups.length; i += 1) {
+      const group = groups[i];
+      drawLandmarkPath(ctx, landmarks, group.indices, width, height, group.color, group.close);
+    }
+    ctx.fillStyle = isPrimary ? "rgba(255,255,255,0.95)" : "rgba(248,250,252,0.7)";
+    for (let i = 0; i < 68; i += 1) {
+      const point = landmarkPointAt(landmarks, i);
+      if (!point) continue;
+      const px = scaleOverlayPoint(point.x, width);
+      const py = scaleOverlayPoint(point.y, height);
+      ctx.beginPath();
+      ctx.arc(px, py, isPrimary ? 2.2 : 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function renderVisTrackingOverlay(faces, primaryFace) {
     if (!visCanvasEl || !visVideoEl) return;
     const width = Number(visVideoEl.videoWidth || 0);
@@ -1623,32 +1689,38 @@
       const w = scaleOverlayPoint(box.width, width);
       const h = scaleOverlayPoint(box.height, height);
       const isPrimary = face === primaryFace;
+      const confidence = Number(face && (face.confidence || face.score || 0) || 0);
+      const confidenceLabel = confidence > 0 ? confidence.toFixed(2) : "0.00";
+      const boxColor = isPrimary ? "rgba(45,112,255,0.98)" : "rgba(125,211,252,0.78)";
       ctx.lineWidth = isPrimary ? 3 : 2;
-      ctx.strokeStyle = isPrimary ? "rgba(34,197,94,0.95)" : "rgba(125,211,252,0.7)";
-      ctx.fillStyle = isPrimary ? "rgba(34,197,94,0.12)" : "rgba(125,211,252,0.08)";
+      ctx.strokeStyle = boxColor;
+      ctx.fillStyle = isPrimary ? "rgba(45,112,255,0.08)" : "rgba(125,211,252,0.06)";
       ctx.beginPath();
       ctx.roundRect(x, y, w, h, 14);
       ctx.fill();
       ctx.stroke();
       const label = String(face.pose_hint || "").trim();
       if (isPrimary) visTrackingState.lastPoseHint = label || visTrackingState.lastPoseHint;
-      if (label) {
-        ctx.fillStyle = "rgba(2,6,23,0.85)";
-        ctx.fillRect(x, Math.max(0, y - 24), 90, 20);
-        ctx.fillStyle = "#e2e8f0";
-        ctx.font = "12px sans-serif";
-        ctx.fillText(label.toUpperCase(), x + 8, Math.max(14, y - 10));
-      }
+      ctx.fillStyle = boxColor;
+      ctx.fillRect(x, Math.max(0, y - 22), 48, 18);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(confidenceLabel, x + 6, Math.max(13, y - 9));
       const landmarks = getFaceLandmarks(face);
       visTrackingState.lastLandmarkCount += landmarks.length;
-      ctx.fillStyle = isPrimary ? "rgba(250,204,21,0.95)" : "rgba(248,250,252,0.8)";
-      landmarks.forEach(function (point) {
-        const px = scaleOverlayPoint(point.x, width);
-        const py = scaleOverlayPoint(point.y, height);
-        ctx.beginPath();
-        ctx.arc(px, py, isPrimary ? 4 : 3, 0, Math.PI * 2);
-        ctx.fill();
-      });
+      drawOfficialLandmarkOverlay(ctx, landmarks, width, height, isPrimary);
+      if (isPrimary) {
+        const infoLines = [];
+        if (visLastKnownUserLabel) infoLines.push(String(visLastKnownUserLabel));
+        if (label) infoLines.push(label);
+        const emotion = topEmotionLabel(face.expressions || face.emotion || {});
+        if (emotion) infoLines.push(emotion);
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.font = "bold 13px sans-serif";
+        for (let i = 0; i < infoLines.length; i += 1) {
+          ctx.fillText(infoLines[i], x + 6, Math.min(height - 12, y + h + 18 + (i * 15)));
+        }
+      }
     });
     renderVisDebugCameraMeta();
   }
