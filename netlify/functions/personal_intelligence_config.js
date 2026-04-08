@@ -1,7 +1,8 @@
-const { getUserConfig, getUserConfigByIdentifier, saveUserConfig } = require("../../core/agent_comm");
-const { buildUserConfig } = require("../../core/personalization_engine");
-const { generateUniqueIdentifier } = require("../../core/identity_system");
-const { generateFallbackIdentity } = require("../../core/failsafe_identity");
+const { getUserProfile, getUserProfileByUniqueId, saveUserProfile } = require("../../core/agent_comm");
+const { buildUserProfileRecord } = require("../../core/personalization_engine");
+const { getCurrentUser } = require("../../core/identity_system");
+const { generateUniqueId } = require("../../core/unique_id");
+const { generateFailsafeIdentity } = require("../../core/failsafe_identity");
 
 function json(statusCode, obj) {
   return {
@@ -21,11 +22,14 @@ exports.handler = async function handler(event) {
 
   try {
     if (event.httpMethod === "GET") {
-      const userId = String((event.queryStringParameters && event.queryStringParameters.user_id) || "").trim();
-      const uniqueIdentifier = String((event.queryStringParameters && event.queryStringParameters.unique_identifier) || "").trim();
-      if (!userId && !uniqueIdentifier) return json(400, { ok: false, error: "user_id or unique_identifier is required" });
-      const config = userId ? await getUserConfig(userId) : await getUserConfigByIdentifier(uniqueIdentifier);
-      return json(200, { ok: true, config });
+      const user_id = String((event.queryStringParameters && event.queryStringParameters.user_id) || "").trim();
+      const unique_id = String((event.queryStringParameters && event.queryStringParameters.unique_id) || "").trim();
+      if (!user_id && !unique_id) {
+        return json(400, { ok: false, error: "user_id or unique_id is required" });
+      }
+
+      const profile = user_id ? await getUserProfile(user_id) : await getUserProfileByUniqueId(unique_id);
+      return json(200, { ok: true, profile });
     }
 
     if (event.httpMethod === "POST") {
@@ -36,20 +40,33 @@ exports.handler = async function handler(event) {
         return json(400, { ok: false, error: "Invalid JSON body" });
       }
 
-      const built = buildUserConfig(payload);
-      const identity = built.user_id
-        ? generateUniqueIdentifier(built)
-        : generateFallbackIdentity(payload);
-      const config = {
-        ...built,
-        unique_identifier: identity.unique_identifier || identity.fallback_id,
-        source_profile_file: String((payload.profile && payload.profile.file_name) || payload.source_profile_file || "").trim(),
-      };
-      const saved = await saveUserConfig(config);
+      const identity = getCurrentUser(payload.identity || payload.user || payload) || {};
+      const built = buildUserProfileRecord({
+        ...payload,
+        identity,
+        user_id: payload.user_id || identity.user_id,
+      });
+      const unique_id = generateUniqueId({
+        user_id: built.user_id,
+        personalization_data: built.personalization_data,
+        ai_config: built.ai_config,
+      });
+      const fallback = generateFailsafeIdentity(built);
+      const saved = await saveUserProfile(built.user_id, {
+        personalization_data: built.personalization_data,
+        ai_config: Object.assign({}, built.ai_config, {
+          personalization_prompt: built.personalization_prompt,
+        }),
+        unique_id: unique_id || fallback.unique_id,
+      });
+
       return json(200, {
         ok: true,
-        config: saved && saved.user_config ? saved.user_config : config,
-        identity,
+        profile: saved,
+        identity: {
+          user_id: built.user_id,
+          unique_id: unique_id || fallback.unique_id,
+        },
       });
     }
 
@@ -58,4 +75,3 @@ exports.handler = async function handler(event) {
     return json(500, { ok: false, error: String(error && error.message ? error.message : error) });
   }
 };
-

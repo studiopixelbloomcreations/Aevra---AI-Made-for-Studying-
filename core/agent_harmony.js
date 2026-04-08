@@ -1,26 +1,27 @@
+const { getProviderAvailability } = require("./model_api_registry");
+
 const MODEL_PRIORITY = {
   casual: ["grok", "puter"],
   deep_research: ["deepseek", "openrouter", "puter"],
   tutorial: ["mistral", "openrouter", "puter"],
-  code: ["openrouter", "deepseek", "puter"],
+  coding: ["openrouter", "deepseek", "puter"],
   creative: ["grok", "huggingface", "puter"],
-  multi_question: ["openrouter", "deepseek", "grok", "puter"],
 };
-const { getProviderAvailability } = require("./model_api_registry");
 
-function buildCouncilPrompt(query, analysis) {
+function buildCouncilPrompt(query, analysis, personalizationPrompt = "") {
   return [
     "You are part of an AI council.",
-    "Discuss and refine the best answer collaboratively.",
-    "Return one final unified answer.",
-    `Query type: ${analysis.type}`,
-    `Complexity: ${analysis.complexity}`,
-    `User query: ${query}`,
-  ].join("\n");
+    "Collaborate and produce the best possible answer.",
+    "Return a unified final response only.",
+    `Query type: ${String(analysis.type || "casual")}`,
+    `Complexity: ${String(analysis.complexity || "low")}`,
+    personalizationPrompt ? `Personalization:\n${personalizationPrompt}` : "",
+    `User query: ${String(query || "").trim()}`,
+  ].filter(Boolean).join("\n\n");
 }
 
-function preferredModelsFor(analysis) {
-  return MODEL_PRIORITY[analysis.type] || ["puter"];
+function preferredModelsFor(analysis = {}) {
+  return MODEL_PRIORITY[String(analysis.type || "casual")] || ["puter"];
 }
 
 async function tryAdapter(modelName, context, adapters) {
@@ -34,98 +35,87 @@ async function tryAdapter(modelName, context, adapters) {
       ok: !!(out && out.answer),
       model: modelName,
       answer: out && out.answer ? String(out.answer) : "",
-      raw: out || null,
       error: out && out.error ? String(out.error) : "",
+      raw: out || null,
     };
   } catch (error) {
-    return { ok: false, model: modelName, error: String(error && error.message ? error.message : error) };
+    return {
+      ok: false,
+      model: modelName,
+      error: String(error && error.message ? error.message : error),
+    };
   }
 }
 
 async function coordinateQuery(analysis, options = {}) {
   const preferred = preferredModelsFor(analysis);
   const adapters = options.adapters || {};
-  const available = [];
-  const successful = [];
+  const attempts = [];
+  const successes = [];
 
   for (const modelName of preferred) {
     const result = await tryAdapter(modelName, {
       query: analysis.text,
       analysis,
-      council_prompt: buildCouncilPrompt(analysis.text, analysis),
       seed_answer: options.seedAnswer || "",
+      personalization_prompt: options.personalizationPrompt || "",
+      council_prompt: buildCouncilPrompt(analysis.text, analysis, options.personalizationPrompt || ""),
     }, adapters);
-    available.push(result);
-    if (result.ok) successful.push(result);
-    if (!analysis.requires_multi_models && result.ok) {
+
+    attempts.push(result);
+    if (result.ok) successes.push(result);
+    if (result.ok && !analysis.requires_multi_models) {
       return {
-        final_answer: result.answer,
+        answer: result.answer,
         model_used: modelName,
         fallback_used: modelName !== preferred[0],
-        discussion_mode: !!analysis.requires_multi_models,
-        attempts: available,
+        attempts,
       };
     }
   }
 
-  if (analysis.requires_multi_models && successful.length) {
-    const synthesisModel = successful[0].model;
-    const synthesisAdapter = adapters && adapters[synthesisModel];
-    if (typeof synthesisAdapter === "function" && successful.length > 1) {
-      const synthesis = await tryAdapter(synthesisModel, {
-        query: analysis.text,
-        analysis,
-        seed_answer: options.seedAnswer || "",
-        council_prompt: [
-          "You are part of an AI council.",
-          "Combine the best ideas below into one final answer.",
-          "Be decisive and remove duplication.",
-          `Original query: ${analysis.text}`,
-          "",
-          ...successful.map((row, index) => `Model ${index + 1} (${row.model}): ${row.answer}`),
-        ].join("\n"),
-      }, { [synthesisModel]: synthesisAdapter });
-      if (synthesis.ok) {
-        available.push({
-          ok: true,
-          model: synthesisModel,
-          answer: synthesis.answer,
-          raw: synthesis.raw || null,
-          error: "",
-        });
-        return {
-          final_answer: synthesis.answer,
-          model_used: synthesisModel,
-          fallback_used: synthesisModel !== preferred[0],
-          discussion_mode: true,
-          attempts: available,
-        };
-      }
+  if (analysis.requires_multi_models && successes.length > 1) {
+    const synthesisModel = successes[0].model;
+    const synthesis = await tryAdapter(synthesisModel, {
+      query: analysis.text,
+      analysis,
+      personalization_prompt: options.personalizationPrompt || "",
+      council_prompt: [
+        "You are part of an AI council.",
+        "Combine the strongest ideas into one final answer.",
+        "Return a unified final response only.",
+        options.personalizationPrompt || "",
+        `Original query: ${analysis.text}`,
+        "",
+        ...successes.map((item, index) => `Model ${index + 1} (${item.model}): ${item.answer}`),
+      ].filter(Boolean).join("\n"),
+    }, adapters);
+
+    attempts.push(synthesis);
+    if (synthesis.ok) {
+      return {
+        answer: synthesis.answer,
+        model_used: synthesisModel,
+        fallback_used: synthesisModel !== preferred[0],
+        attempts,
+      };
     }
-    return {
-      final_answer: successful[0].answer,
-      model_used: successful[0].model,
-      fallback_used: successful[0].model !== preferred[0],
-      discussion_mode: true,
-      attempts: available,
-    };
   }
 
+  const winning = successes[0];
   return {
-    final_answer: String(options.seedAnswer || "").trim(),
-    model_used: preferred[0] || "puter",
-    fallback_used: true,
-    discussion_mode: !!analysis.requires_multi_models,
-    attempts: available,
+    answer: winning ? winning.answer : String(options.seedAnswer || "").trim(),
+    model_used: winning ? winning.model : (preferred[0] || "puter"),
+    fallback_used: !winning || winning.model !== preferred[0],
+    attempts,
   };
 }
 
 async function coordinateAgentHarmony(observatoryOutput, options = {}) {
-  const analyses = observatoryOutput && Array.isArray(observatoryOutput.queries) ? observatoryOutput.queries : [];
+  const queries = observatoryOutput && Array.isArray(observatoryOutput.queries) ? observatoryOutput.queries : [];
   const query_plans = [];
-  const provider_availability = getProviderAvailability();
 
-  for (const query of analyses) {
+  for (const query of queries) {
     const coordinated = await coordinateQuery(query, options);
     query_plans.push({
       query_id: query.id,
@@ -133,22 +123,25 @@ async function coordinateAgentHarmony(observatoryOutput, options = {}) {
       type: query.type,
       complexity: query.complexity,
       requires_multi_models: query.requires_multi_models,
-      ...coordinated,
+      answer: coordinated.answer,
+      model_used: coordinated.model_used,
+      fallback_used: coordinated.fallback_used,
+      attempts: coordinated.attempts,
     });
   }
 
   const primary = query_plans[0] || {
-    final_answer: String(options.seedAnswer || "").trim(),
+    answer: String(options.seedAnswer || "").trim(),
     model_used: "puter",
     fallback_used: false,
   };
 
   return {
-    final_answer: primary.final_answer,
+    answer: primary.answer,
+    final_answer: primary.answer,
     model_used: primary.model_used,
-    fallback_used: query_plans.some((row) => !!row.fallback_used),
-    discussion_mode: query_plans.some((row) => !!row.requires_multi_models),
-    provider_availability,
+    fallback_used: query_plans.some((item) => item.fallback_used),
+    provider_availability: getProviderAvailability(),
     query_plans,
   };
 }
@@ -158,4 +151,3 @@ module.exports = {
   coordinateAgentHarmony,
   preferredModelsFor,
 };
-

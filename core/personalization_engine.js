@@ -1,75 +1,113 @@
-function asText(value) {
-  return String(value || "").trim();
+function cleanText(value, fallback = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || fallback;
 }
 
-function listFrom(value) {
-  return asText(value)
-    .split(",")
-    .map((row) => row.trim())
+function asArray(value, limit = 12) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cleanText(item)).filter(Boolean).slice(0, limit);
+  }
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((item) => cleanText(item))
     .filter(Boolean)
-    .slice(0, 12);
+    .slice(0, limit);
 }
 
-function inferTraits(answers) {
-  const traits = [];
-  const tone = asText(answers.preferred_tone).toLowerCase();
-  const style = asText(answers.learning_style).toLowerCase();
-  if (tone) traits.push(tone);
-  if (style.includes("step")) traits.push("structured");
-  if (style.includes("visual")) traits.push("visual_learner");
-  if (style.includes("example")) traits.push("example_driven");
-  if (!traits.length) traits.push("adaptive");
-  return Array.from(new Set(traits)).slice(0, 8);
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
 }
 
-function buildPersonalizationPrompt(input = {}) {
-  const answers = input.answers && typeof input.answers === "object" ? input.answers : {};
-  return [
-    "User Profile:",
-    `- Interests: ${asText(answers.interests) || "unknown"}`,
-    `- Communication style: ${asText(answers.preferred_tone) || "adaptive"}`,
-    `- Preferences: ${asText(answers.favorite_subjects) || "unknown"}`,
-    `- Behavior patterns: ${asText(answers.learning_style) || "adaptive"}`,
-    `- Goals: ${asText(answers.goals) || "unknown"}`,
-    "Generate a structured user_config.json object.",
-  ].join("\n");
-}
+function buildStructuredProfile(input = {}) {
+  const answers = asObject(input.answers || input.personalization_answers || input.personalization_data);
+  const identity = asObject(input.identity || input.user || {});
 
-function buildUserConfig(input = {}) {
-  const answers = input.answers && typeof input.answers === "object" ? input.answers : {};
-  const profile = input.profile && typeof input.profile === "object" ? input.profile : {};
-  const userId = asText(input.user_id || (profile.user_identity && profile.user_identity.username) || profile.file_name || "user");
   return {
-    user_id: userId,
-    prompt: buildPersonalizationPrompt(input),
-    personality_traits: inferTraits(answers),
-    interests: listFrom(answers.interests),
-    communication_style: {
-      tone: asText(answers.preferred_tone) || "adaptive",
-      learning_style: asText(answers.learning_style) || "adaptive",
-      preferred_language: asText(answers.preferred_language) || "English",
-      preferred_name: asText(answers.preferred_name) || asText(answers.full_name),
+    interests: asArray(answers.interests),
+    communication_style: cleanText(
+      answers.communication_style || answers.preferred_tone || answers.preferred_style,
+      "adaptive"
+    ),
+    tone: cleanText(answers.tone || answers.preferred_tone, "adaptive"),
+    goals: asArray(answers.goals),
+    behavior_preferences: Object.assign(
+      {
+        learning_style: cleanText(answers.learning_style, "adaptive"),
+        response_length: cleanText(answers.response_length, "balanced"),
+        language: cleanText(answers.preferred_language || input.language, "English"),
+      },
+      asObject(answers.behavior_preferences)
+    ),
+    identity_snapshot: {
+      name: cleanText(identity.name || answers.preferred_name || answers.full_name),
+      email: cleanText(identity.email),
+      avatar: cleanText(identity.avatar),
     },
-    ai_behavior: {
-      response_style: asText(answers.learning_style) || "adaptive",
-      tone: asText(answers.preferred_tone) || "balanced",
-      goals: listFrom(answers.goals),
+    onboarding_answers: answers,
+  };
+}
+
+function generateAIConfig(profile = {}) {
+  const interests = asArray(profile.interests);
+  const goals = asArray(profile.goals);
+  const behavior = asObject(profile.behavior_preferences);
+  const tone = cleanText(profile.tone, "adaptive");
+  const communicationStyle = cleanText(profile.communication_style, "adaptive");
+
+  return {
+    tone,
+    communication_style: communicationStyle,
+    response_preferences: {
+      length: cleanText(behavior.response_length, "balanced"),
+      depth: cleanText(behavior.depth, "adaptive"),
+      format: cleanText(behavior.format, "adaptive"),
     },
-    memory: {
-      facts: input.known_facts && typeof input.known_facts === "object" ? input.known_facts : {},
-      profile_file: asText(profile.file_name),
-      personalization_answers: { ...answers },
+    memory_policy: {
+      save_user_preferences: true,
+      save_conversation_facts: true,
+      instant_reload: true,
     },
-    preferences: {
-      favorite_subjects: listFrom(answers.favorite_subjects),
-      hobbies: listFrom(answers.hobbies),
-      timezone_or_city: asText(answers.timezone_or_city),
+    routing_hints: {
+      preferred_models: asArray(behavior.preferred_models, 6),
+      strong_topics: interests.slice(0, 6),
+      active_goals: goals.slice(0, 6),
     },
   };
 }
 
-module.exports = {
-  buildPersonalizationPrompt,
-  buildUserConfig,
-};
+function buildPersonalizationPrompt(input = {}) {
+  const profile = input.personalization_data ? input.personalization_data : buildStructuredProfile(input);
+  const aiConfig = input.ai_config ? input.ai_config : generateAIConfig(profile);
+  const name = cleanText(profile.identity_snapshot && profile.identity_snapshot.name, "the user");
 
+  return [
+    "Personalization Profile",
+    `User: ${name}`,
+    `Tone: ${cleanText(aiConfig.tone, "adaptive")}`,
+    `Communication Style: ${cleanText(aiConfig.communication_style, "adaptive")}`,
+    `Interests: ${asArray(profile.interests).join(", ") || "none yet"}`,
+    `Goals: ${asArray(profile.goals).join(", ") || "none yet"}`,
+    `Behavior Preferences: ${JSON.stringify(asObject(profile.behavior_preferences))}`,
+    "Personalize responses to be consistent with this profile while staying accurate and concise.",
+  ].join("\n");
+}
+
+function buildUserProfileRecord(input = {}) {
+  const identity = asObject(input.identity || input.user || {});
+  const personalization_data = buildStructuredProfile(input);
+  const ai_config = generateAIConfig(personalization_data);
+
+  return {
+    user_id: cleanText(input.user_id || identity.user_id || identity.uid || identity.email),
+    personalization_data,
+    ai_config,
+    personalization_prompt: buildPersonalizationPrompt({ personalization_data, ai_config }),
+  };
+}
+
+module.exports = {
+  buildStructuredProfile,
+  generateAIConfig,
+  buildPersonalizationPrompt,
+  buildUserProfileRecord,
+};

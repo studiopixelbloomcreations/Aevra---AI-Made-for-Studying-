@@ -1,19 +1,29 @@
-const crypto = require("crypto");
+const { generateUniqueId } = require("./unique_id");
 
-function generateFallbackIdentity(input = {}) {
-  const seed = JSON.stringify({
-    user_id: input.user_id || "user",
-    prompt: input.prompt || "",
-    profile_file: input.profile_file || "",
-    at: new Date().toISOString().slice(0, 10),
-  });
-  const hash = crypto.createHash("md5").update(seed).digest("hex");
+function generateFailsafeIdentity(input = {}) {
+  const user_id = String(input.user_id || "").trim();
+  try {
+    const unique_id = generateUniqueId({
+      user_id,
+      personalization_data: input.personalization_data || {},
+      ai_config: input.ai_config || {},
+    });
+    if (unique_id) {
+      return {
+        user_id,
+        unique_id,
+        source: "config_hash",
+      };
+    }
+  } catch (error) {}
+
   return {
-    fallback_id: `fallback_${hash.slice(0, 18)}`,
+    user_id,
+    unique_id: `${user_id || "user"}_${Date.now()}`,
+    source: "user_timestamp",
   };
 }
 
 module.exports = {
-  generateFallbackIdentity,
+  generateFailsafeIdentity,
 };
-

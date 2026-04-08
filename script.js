@@ -703,6 +703,90 @@
     return {};
   }
 
+  function getPiAuthIdentity(){
+    try {
+      if(window.Auth && typeof window.Auth.getUser === 'function'){
+        const user = window.Auth.getUser();
+        if(user && (user.uid || user.email)){
+          return {
+            user_id: String(user.uid || user.email || '').trim(),
+            email: String(user.email || '').trim(),
+            name: String(user.name || '').trim(),
+            avatar: String(user.photoURL || '').trim()
+          };
+        }
+      }
+    } catch (e) {}
+    const email = String(localStorage.getItem('g9_email') || 'guest@student.com').trim();
+    return {
+      user_id: email,
+      email: email,
+      name: '',
+      avatar: ''
+    };
+  }
+
+  async function fetchPiProfile(identity){
+    const userId = identity && identity.user_id ? String(identity.user_id).trim() : '';
+    if(!userId) return null;
+    const url = '/personal-intelligence/config?user_id=' + encodeURIComponent(userId);
+    const res = await (window.Api && window.Api.apiFetch
+      ? window.Api.apiFetch(url, { method: 'GET' })
+      : fetch(url, { method: 'GET' }));
+    const data = await safeReadJson(res);
+    if(!res.ok) throw new Error('Profile load failed (HTTP ' + res.status + '): ' + getBackendErrorMessage(data));
+    return data && data.profile ? data.profile : null;
+  }
+
+  async function ensurePiProfile(identity){
+    let profile = null;
+    try {
+      profile = await fetchPiProfile(identity);
+    } catch (e) {}
+    if(profile) return profile;
+
+    const reqBody = {
+      user_id: identity.user_id,
+      email: identity.email,
+      name: identity.name,
+      avatar: identity.avatar,
+      identity: identity
+    };
+    const res = await (window.Api && window.Api.apiFetch
+      ? window.Api.apiFetch('/personal-intelligence/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) })
+      : fetch('/personal-intelligence/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) }));
+    const data = await safeReadJson(res);
+    if(!res.ok){
+      throw new Error('Profile creation failed (HTTP ' + res.status + '): ' + getBackendErrorMessage(data));
+    }
+    return data && data.profile ? data.profile : null;
+  }
+
+  function getPiPersonalizationPrompt(profile){
+    const aiConfig = profile && profile.ai_config && typeof profile.ai_config === 'object' ? profile.ai_config : {};
+    if(aiConfig.personalization_prompt){
+      return String(aiConfig.personalization_prompt).trim();
+    }
+    const personalization = profile && profile.personalization_data && typeof profile.personalization_data === 'object'
+      ? profile.personalization_data
+      : {};
+    const interests = Array.isArray(personalization.interests) ? personalization.interests.join(', ') : '';
+    const goals = Array.isArray(personalization.goals) ? personalization.goals.join(', ') : '';
+    const tone = String((aiConfig.tone || personalization.tone || personalization.communication_style || 'adaptive')).trim();
+    return [
+      'Personalize this response for the authenticated user.',
+      'Tone: ' + (tone || 'adaptive'),
+      'Interests: ' + (interests || 'none yet'),
+      'Goals: ' + (goals || 'none yet')
+    ].join('\n');
+  }
+
+  function emitHarmonyDebug(detail){
+    try {
+      window.dispatchEvent(new CustomEvent('pi:harmony-debug', { detail: detail || {} }));
+    } catch (e) {}
+  }
+
   function setPiChatMode(enabled){
     state.piChatMode = !!enabled;
     try { localStorage.setItem(PI_CHAT_TOGGLE_KEY, state.piChatMode ? 'true' : 'false'); } catch (e) {}
@@ -1124,27 +1208,42 @@
         : [];
 
       try{
+        const identity = getPiAuthIdentity();
+        const profile = await ensurePiProfile(identity);
+        const personalizationPrompt = getPiPersonalizationPrompt(profile);
         await ensurePuterReady(true);
         const selectedMode = getPiModelMode();
         const effectiveMode = selectedMode === 'pi_dynamic' ? detectPiDynamicMode(text) : selectedMode;
         setPiActiveModeLabel(effectiveMode);
         const piModel = getPiModel();
         let puterAnswer = '';
+        emitHarmonyDebug({
+          status: 'Processing...',
+          observatory: {
+            type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
+            complexity: effectiveMode === 'agent_swarm' || effectiveMode === 'all_in_one' ? 'high' : 'medium',
+            queries: [{ text: text }]
+          },
+          harmony: {
+            model_used: 'Selecting...',
+            fallback_used: false
+          }
+        });
 
         if(effectiveMode === 'agent_swarm'){
-          puterAnswer = await runAgentSwarmSummary(history, text);
+          puterAnswer = await runAgentSwarmSummary([{ role: 'system', content: personalizationPrompt }].concat(history), text);
         } else if(effectiveMode === 'all_in_one'){
-          const researchPrompt = [{ role: 'system', content: getPiPromptByMode('research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.' }].concat(history).concat([{ role: 'user', content: text }]);
-          const deepPrompt = [{ role: 'system', content: getPiPromptByMode('deep_research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.' }].concat(history).concat([{ role: 'user', content: text }]);
+          const researchPrompt = [{ role: 'system', content: getPiPromptByMode('research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
+          const deepPrompt = [{ role: 'system', content: getPiPromptByMode('deep_research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
           const researchAnswer = await runPuterChatWithModel(researchPrompt, piModel);
           const deepAnswer = await runPuterChatWithModel(deepPrompt, piModel);
           const allInOnePrompt = [
-            { role: 'system', content: getPiPromptByMode('all_in_one') },
+            { role: 'system', content: getPiPromptByMode('all_in_one') + '\n\n' + personalizationPrompt },
             { role: 'user', content: 'User request:\n' + text + '\n\nResearch output:\n' + String(researchAnswer || 'none') + '\n\nDeep research output:\n' + String(deepAnswer || 'none') }
           ];
           puterAnswer = await runPuterChatWithModel(allInOnePrompt, piModel);
         } else {
-          const piPrompt = getPiPromptByMode(effectiveMode) + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.';
+          const piPrompt = getPiPromptByMode(effectiveMode) + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt;
           const puterResp = await window.puter.ai.chat([{ role: 'system', content: piPrompt }].concat(history).concat([{ role: 'user', content: text }]), { model: piModel });
           puterAnswer = extractPuterText(puterResp);
         }
@@ -1155,12 +1254,17 @@
 
         const reqBody = {
           message: text,
-          email: 'guest@student.com',
+          user_id: identity.user_id,
+          email: identity.email,
+          name: identity.name,
+          avatar: identity.avatar,
+          identity: identity,
           language: state.language,
           subject: state.subject,
           title: 'Personal Intelligence',
           history: history,
           known_facts: getPiKnownFacts(),
+          profile: profile,
           puter_reply: {
             answer: puterAnswer,
             model: piModel
@@ -1179,11 +1283,27 @@
         }
         const answerRaw = data && data.answer ? String(data.answer) : puterAnswer;
         const answer = answerRaw ? stripAwardPointsLine(answerRaw) : 'Personal Intelligence returned an empty response.';
+        emitHarmonyDebug({
+          status: 'Complete',
+          observatory: data && data.observatory ? data.observatory : {
+            type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
+            complexity: 'medium',
+            queries: [{ text: text }]
+          },
+          harmony: data && data.agent_harmony ? data.agent_harmony : {
+            model_used: piModel,
+            fallback_used: false
+          },
+          user_profile: data && data.user_profile ? data.user_profile : profile
+        });
         const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai');
         if(lastAi) lastAi.content=answer; emitProgressEvent('g9:ai_response', { chatId: state.active, subject: state.subject, text: answer });
         renderActiveChat(); saveChats();
       }
-      catch(e){ const msg=(e && e.message) ? ('Warning: ' + String(e.message)) : 'Warning: Personal Intelligence failed to respond.'; const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai'); if(lastAi) lastAi.content=msg; renderActiveChat(); saveChats(); toast(msg,{duration:5000}); }
+      catch(e){
+        emitHarmonyDebug({ status: 'Failed', observatory: {}, harmony: { model_used: '-', fallback_used: false } });
+        const msg=(e && e.message) ? ('Warning: ' + String(e.message)) : 'Warning: Personal Intelligence failed to respond.'; const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai'); if(lastAi) lastAi.content=msg; renderActiveChat(); saveChats(); toast(msg,{duration:5000});
+      }
       return;
     }
 

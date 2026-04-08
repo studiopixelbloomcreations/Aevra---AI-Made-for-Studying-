@@ -21,6 +21,12 @@ function providerConfig() {
       model: env("PI_GROQ_MODEL", "llama-3.1-8b-instant"),
       headers: {},
     },
+    grok: {
+      apiKey: getModelApiKey("grok") || env("GROK_API_KEY") || env("XAI_API_KEY"),
+      baseUrl: env("PI_GROK_BASE_URL", "https://api.x.ai/v1"),
+      model: env("PI_GROK_MODEL", "grok-3-mini"),
+      headers: {},
+    },
     mistral: {
       apiKey: getModelApiKey("mistral") || env("MISTRAL_API_KEY"),
       baseUrl: env("PI_MISTRAL_BASE_URL", "https://api.mistral.ai/v1"),
@@ -97,6 +103,7 @@ function buildHarmonyAdapters() {
   return {
     openrouter: async (context) => postChatCompletion(configs.openrouter, context),
     groq: async (context) => postChatCompletion(configs.groq, context),
+    grok: async (context) => postChatCompletion(configs.grok, context),
     mistral: async (context) => postChatCompletion(configs.mistral, context),
     huggingface: async (context) => postChatCompletion(configs.huggingface, context),
     deepseek: async (context) => postChatCompletion(configs.deepseek, context),

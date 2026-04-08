@@ -7,6 +7,11 @@ const { analyzeInput } = require("../../core/observatory");
 const { coordinateAgentHarmony } = require("../../core/agent_harmony");
 const { getProviderAvailability } = require("../../core/model_api_registry");
 const { buildHarmonyAdapters } = require("../../core/model_adapters");
+const { getUserProfile, saveUserProfile, updateUserMemory } = require("../../core/agent_comm");
+const { getCurrentUser } = require("../../core/identity_system");
+const { buildUserProfileRecord, buildPersonalizationPrompt } = require("../../core/personalization_engine");
+const { generateUniqueId } = require("../../core/unique_id");
+const { generateFailsafeIdentity } = require("../../core/failsafe_identity");
 
 function json(statusCode, obj) {
   return {
@@ -316,20 +321,59 @@ exports.handler = async function handler(event) {
 
   const message = String((payload && payload.message) || "").trim();
   const history = payload && payload.history ? payload.history : [];
+  const authUser = getCurrentUser(payload && (payload.identity || payload.user || payload)) || {};
+  const resolvedUserId = String((payload && payload.user_id) || authUser.user_id || (payload && payload.email) || "guest@student.com").trim();
   const language = String((payload && payload.language) || "English");
   const subject = String((payload && payload.subject) || "General");
   const incomingKnownFacts = sanitizeKnownFacts(payload && payload.known_facts);
   if (!message) return json(200, { error: "Message cannot be empty" });
   const startedAt = Date.now();
   const cloudEvolveOnly = !!(payload && payload.cloud_evolve_only);
+  let profile = null;
+  let personalizationPrompt = "";
+
+  try {
+    profile = await getUserProfile(resolvedUserId);
+    if (!profile && resolvedUserId) {
+      const builtProfile = buildUserProfileRecord({
+        user_id: resolvedUserId,
+        identity: {
+          user_id: resolvedUserId,
+          email: authUser.email || payload.email || "",
+          name: authUser.name || payload.name || "",
+          avatar: authUser.avatar || payload.avatar || "",
+        },
+        answers: payload && (payload.personalization_answers || payload.onboarding_answers || {}),
+        language,
+      });
+      const unique_id = generateUniqueId({
+        user_id: builtProfile.user_id,
+        personalization_data: builtProfile.personalization_data,
+        ai_config: builtProfile.ai_config,
+      }) || generateFailsafeIdentity(builtProfile).unique_id;
+      profile = await saveUserProfile(resolvedUserId, {
+        personalization_data: builtProfile.personalization_data,
+        ai_config: Object.assign({}, builtProfile.ai_config, {
+          personalization_prompt: builtProfile.personalization_prompt,
+        }),
+        unique_id,
+      });
+    }
+    personalizationPrompt = String(
+      (profile && profile.ai_config && profile.ai_config.personalization_prompt) ||
+      buildPersonalizationPrompt({
+        personalization_data: profile && profile.personalization_data || {},
+        ai_config: profile && profile.ai_config || {},
+      })
+    ).trim();
+  } catch (error) {
+    profile = null;
+    personalizationPrompt = "";
+  }
 
   const extractedUpdates = detectMemoryUpdates(message);
   const combinedKnownFacts = mergeKnownFacts(incomingKnownFacts, extractedUpdates);
-  const observatory = analyzeInput(message, {
-    history,
-    user_id: payload && payload.user_id,
-    unique_identifier: payload && payload.unique_identifier,
-  });
+  const observatory = analyzeInput(message);
   const action = detectAction(message, history, combinedKnownFacts);
   const actionUpdates = {};
   if (action && action.home_address) actionUpdates.home_address = String(action.home_address);
@@ -341,6 +385,7 @@ exports.handler = async function handler(event) {
   const harmony = await coordinateAgentHarmony(observatory, {
     seedAnswer,
     adapters: action || cloudEvolveOnly ? {} : buildHarmonyAdapters(),
+    personalizationPrompt,
   });
   const answer = cloudEvolveOnly || action
     ? seedAnswer
@@ -354,6 +399,19 @@ exports.handler = async function handler(event) {
   const latencyMs = Math.max(0, Date.now() - startedAt);
   const runtimeMode = "cloud_only";
   const modelApiAvailability = getProviderAvailability();
+  const memoryUpdates = mergeKnownFacts(extractedUpdates, actionUpdates);
+
+  try {
+    if (resolvedUserId && Object.keys(memoryUpdates).length) {
+      await updateUserMemory(resolvedUserId, {
+        known_facts: memoryUpdates,
+        last_message: message,
+        last_subject: subject,
+        updated_at: new Date().toISOString(),
+      });
+      profile = await getUserProfile(resolvedUserId);
+    }
+  } catch (error) {}
 
   let evolutionMeta = null;
   try {
@@ -372,7 +430,7 @@ exports.handler = async function handler(event) {
       subject,
       history,
       known_facts: mergedKnownFacts,
-      profile: payload && payload.profile,
+      profile: profile || (payload && payload.profile),
       current_task: action && action.type ? String(action.type) : "conversation",
       runtime_mode: runtimeMode,
     });
@@ -386,11 +444,11 @@ exports.handler = async function handler(event) {
     if (cloudEnabled) {
       cloudEvolution = await autoEvolveToGitHub({
         uid: payload && payload.uid,
-        email: payload && payload.email,
-        user_id: payload && payload.user_id,
+        email: authUser.email || (payload && payload.email),
+        user_id: resolvedUserId,
         message,
         known_facts: mergedKnownFacts,
-        memory_updates: mergeKnownFacts(extractedUpdates, actionUpdates),
+        memory_updates: memoryUpdates,
         puter_generated_code: payload && payload.puter_generated_code,
         puter_model: payload && payload.puter_model,
         schema_candidates: payload && payload.schema_candidates,
@@ -426,8 +484,10 @@ exports.handler = async function handler(event) {
     used_google_context: false,
     google_results: [],
     learned_facts: mergedKnownFacts,
-    memory_updates: mergeKnownFacts(extractedUpdates, actionUpdates),
+    memory_updates: memoryUpdates,
     action,
+    user_profile: profile || undefined,
+    personalization_prompt: personalizationPrompt || undefined,
     integration_state: {
       spotify_connected: false,
       google_maps_connected: true,

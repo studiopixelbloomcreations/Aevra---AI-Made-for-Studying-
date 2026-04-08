@@ -27,7 +27,6 @@ const rootFilesToCopy = [
   "login.js",
   "loginRedirect.js",
   "mic.js",
-  "personal_intelligence_ui.js",
   "personalization_sync.js",
   "points.js",
   "profile.js",
@@ -43,15 +42,13 @@ const rootFilesToCopy = [
   "styles.css",
   "timer.js",
   "upload.js",
-  "vis_preview.html",
   "voice_multimodal_ui.js",
 ];
 
 const rootDirsToCopy = [
   "ExamModeToggle",
   "public",
-  "vis",
-  "vis_identity_profiles",
+  "ui",
 ];
 
 function cleanDir(target) {

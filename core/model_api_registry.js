@@ -21,6 +21,7 @@ function getModelApiKey(provider) {
   }
   const envMap = {
     openrouter: "OPENROUTER_API_KEY",
+    grok: "GROK_API_KEY",
     groq: "GROQ_API_KEY",
     mistral: "MISTRAL_API_KEY",
     huggingface: "HUGGINGFACE_API_KEY",
@@ -34,7 +35,7 @@ function getModelApiKey(provider) {
 }
 
 function getProviderAvailability() {
-  const providers = ["openrouter", "groq", "mistral", "huggingface", "deepseek"];
+  const providers = ["openrouter", "grok", "groq", "mistral", "huggingface", "deepseek"];
   const out = {};
   providers.forEach((provider) => {
     out[provider] = !!getModelApiKey(provider);

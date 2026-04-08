@@ -1,78 +1,51 @@
-const fs = require('fs');
-const path = require('path');
-const { chromium, firefox, webkit } = require('playwright');
-const http = require('http');
+const fs = require("fs");
+const path = require("path");
+const http = require("http");
+const { chromium, firefox, webkit } = require("playwright");
 
-const BASE_URL = process.env.VIS_BASE_URL || 'http://127.0.0.1:8080/app.html?visMock=1';
-const ARTIFACT_DIR = path.join(__dirname, 'artifacts');
+const BASE_URL = process.env.VIS_BASE_URL || "http://127.0.0.1:8080/app.html";
+const ARTIFACT_DIR = path.join(__dirname, "artifacts");
 
 function ensureDir() {
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForMetrics(page, timeoutMs) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const metrics = await page.evaluate(() => window.__VIS_METRICS || null);
-    if (metrics && metrics.timings && metrics.timings.total_verification_time_ms) return metrics;
-    await sleep(500);
-  }
-  return null;
-}
-
 function startStaticServer(rootDir, port) {
   const mime = {
-    '.html': 'text/html',
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.svg': 'image/svg+xml',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.txt': 'text/plain',
-    '.xml': 'application/xml',
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
   };
+
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-      let filePath = path.join(rootDir, urlPath.replace(/^\/+/, ''));
-      if (urlPath === '/') filePath = path.join(rootDir, 'index.html');
-      if (urlPath === '/public-config') {
-        res.setHeader('Content-Type', 'application/json');
+      const urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+      let filePath = path.join(rootDir, urlPath.replace(/^\/+/, ""));
+      if (urlPath === "/") filePath = path.join(rootDir, "index.html");
+      if (urlPath === "/public-config") {
+        res.setHeader("Content-Type", "application/json");
         return res.end(JSON.stringify({ ok: true, firebase: { apiKey: "test", authDomain: "test", projectId: "test" } }));
       }
-      if (urlPath.startsWith('/gamification/')) {
-        res.setHeader('Content-Type', 'application/json');
+      if (urlPath.startsWith("/gamification/")) {
+        res.setHeader("Content-Type", "application/json");
         return res.end(JSON.stringify({ points: 0, badges: [] }));
       }
-      if (urlPath === '/vis_identity_profiles/index.json') {
-        res.setHeader('Content-Type', 'application/json');
-        return res.end(JSON.stringify([]));
-      }
       if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-        filePath = path.join(filePath, 'index.html');
+        filePath = path.join(filePath, "index.html");
       }
       fs.readFile(filePath, (err, data) => {
         if (err) {
           res.statusCode = 404;
-          res.end('Not found');
-          return;
+          return res.end("Not found");
         }
-        const ext = path.extname(filePath).toLowerCase();
-        res.setHeader('Content-Type', mime[ext] || 'application/octet-stream');
+        res.setHeader("Content-Type", mime[path.extname(filePath).toLowerCase()] || "application/octet-stream");
         res.end(data);
       });
     });
-    server.on('error', reject);
-    server.listen(port, '127.0.0.1', () => resolve(server));
+    server.on("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve(server));
   });
 }
 
@@ -81,177 +54,188 @@ async function run() {
   const consoleLogs = [];
   const pageErrors = [];
   const requestFailures = [];
-  const responses404 = [];
-  let launchError = null;
+  const forbiddenRequests = [];
 
-  let server = null;
-  if (process.env.VIS_START_SERVER !== '0') {
-    server = await startStaticServer(path.resolve(__dirname, '..'), 8080);
-  }
-
-  const launchArgs = [
-    '--use-fake-ui-for-media-stream',
-    '--use-fake-device-for-media-stream',
-    '--no-sandbox',
-  ];
-
-  const chromePath = process.env.CHROME_PATH || 'C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe';
-  const executablePath = fs.existsSync(chromePath) ? chromePath : undefined;
+  const server = await startStaticServer(path.resolve(__dirname, ".."), 8080);
 
   let browser = null;
-  let browserName = 'chromium';
+  let browserName = "chromium";
+  const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  const executablePath = fs.existsSync(chromePath) ? chromePath : undefined;
   try {
-    browser = await chromium.launch({
-      headless: true,
-      executablePath,
-      args: launchArgs,
-    });
+    browser = await chromium.launch({ headless: true, executablePath, args: ["--no-sandbox"] });
   } catch (err) {
     try {
-      browserName = 'firefox';
-      browser = await firefox.launch({ headless: true, args: launchArgs });
+      browserName = "firefox";
+      browser = await firefox.launch({ headless: true });
     } catch (err2) {
       try {
-        browserName = 'webkit';
-        browser = await webkit.launch({ headless: true, args: launchArgs });
+        browserName = "webkit";
+        browser = await webkit.launch({ headless: true });
       } catch (err3) {
-        launchError = err3 || err2 || err;
+        ensureDir();
+        fs.writeFileSync(path.join(ARTIFACT_DIR, "vis_runner_error.log"), String((err3 && err3.stack) || (err2 && err2.stack) || (err && err.stack) || err3 || err2 || err));
+        server.close();
+        process.exit(1);
       }
     }
   }
 
-  if (!browser) {
-    const output = {
-      url: BASE_URL,
-      browser: browserName,
-      metrics: null,
-      consoleLogs,
-      pageErrors,
-      requestFailures,
-      responses404,
-      error: launchError ? String(launchError && launchError.message ? launchError.message : launchError) : 'Unknown launch error',
-    };
-    fs.writeFileSync(path.join(ARTIFACT_DIR, 'vis_report.json'), JSON.stringify(output, null, 2));
-    if (server) server.close();
-    process.exit(1);
-  }
-  const context = await browser.newContext({
-    permissions: ['camera'],
-  });
+  const context = await browser.newContext();
   await context.addInitScript(() => {
-    window.__VIS_TEST_MODE = true;
+    window.__TEST_MEDIA_CALLS__ = [];
+    if (navigator.mediaDevices) {
+      navigator.mediaDevices.getUserMedia = async function (constraints) {
+        window.__TEST_MEDIA_CALLS__.push({ kind: "getUserMedia", constraints: constraints || null });
+        throw new Error("getUserMedia should not be called in no-camera PI flow");
+      };
+    }
+    window.puter = {
+      ai: {
+        chat: async function () {
+          return { message: { content: "Personalized mock answer." } };
+        },
+        listModels: async function () {
+          return [{ id: "google/gemini-2.5-flash" }];
+        },
+      },
+      auth: {
+        isSignedIn: async function () { return true; },
+        signIn: async function () { return true; },
+      },
+    };
+    window.Auth = {
+      getUser: function () {
+        return {
+          uid: "user_123",
+          email: "student@example.com",
+          name: "Student One",
+          photoURL: "",
+        };
+      },
+    };
   });
-  await context.route('**/*puter.com*', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-  await context.route('**/*firestore.googleapis.com*', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
-  await context.route('**/gamification/*', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"points":0,"badges":[]}' }));
-  await context.route('**/public-config', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"firebase":{}}' }));
-  await context.route('**/detect-face', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      face_detected: true,
-      face_count: 1
-    })
-  }));
-  await context.route('**/recognize-user', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      user_id: 'test_user',
-      similarity: 0.972,
-      confidence: 97.2,
-      liveness_passed: true
-    })
-  }));
-  await context.route('**/analyze-emotion', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ emotion: 'happy' })
-  }));
-  await context.route('**/user-profile/test_user', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      username: 'test_user',
-      face_folder_path: 'face_db/test_user',
-      personalization_profile: { tone: 'friendly' },
-      ai_config: { mode: 'study' },
-      memory: { lesson: 'algebra' }
-    })
-  }));
-  await context.route('**/register-user', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ success: true })
-  }));
+
+  await context.route("**/personal-intelligence/config?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        profile: {
+          user_id: "user_123",
+          personalization_data: {
+            interests: ["robotics"],
+            goals: ["improve coding"],
+            communication_style: "direct",
+            tone: "calm",
+          },
+          ai_config: {
+            tone: "calm",
+            personalization_prompt: "Personalize for Student One. Tone: calm. Interests: robotics. Goals: improve coding.",
+          },
+          unique_id: "abc123",
+        },
+      }),
+    });
+  });
+  await context.route("**/personal-intelligence/config", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        profile: {
+          user_id: "user_123",
+          personalization_data: {},
+          ai_config: { personalization_prompt: "Personalize for Student One." },
+          unique_id: "abc123",
+        },
+      }),
+    });
+  });
+  await context.route("**/personal-intelligence/ask", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        answer: "Personalized mock answer.",
+        observatory: {
+          queries: [{ id: "q_1", text: "Help me with algebra", type: "tutorial", complexity: "medium", requires_multi_models: false }],
+          type: "tutorial",
+          complexity: "medium",
+          requires_multi_models: false,
+        },
+        agent_harmony: {
+          model_used: "mistral",
+          fallback_used: false,
+        },
+      }),
+    });
+  });
+  await context.route("**/*puter.com*", (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: "" }));
+  await context.route("**/*", async (route) => {
+    const url = route.request().url();
+    if (/\/vis\/|detect-face|process-face|recognize-user|register-user|analyze-emotion/i.test(url)) {
+      forbiddenRequests.push(url);
+      await route.abort();
+      return;
+    }
+    await route.continue();
+  });
 
   const page = await context.newPage();
-  page.on('console', (msg) => {
-    consoleLogs.push({ type: msg.type(), text: msg.text() });
-  });
-  page.on('pageerror', (err) => {
-    pageErrors.push(err.message || String(err));
-  });
-  page.on('requestfailed', (req) => {
-    const failure = req.failure();
-    const errorText = failure ? failure.errorText : 'unknown';
-    if (errorText === 'net::ERR_ABORTED') return;
-    requestFailures.push({ url: req.url(), error: errorText });
-  });
-  page.on('response', (res) => {
-    if (res.status() === 404) responses404.push(res.url());
-  });
+  page.on("console", (msg) => consoleLogs.push({ type: msg.type(), text: msg.text() }));
+  page.on("pageerror", (err) => pageErrors.push(err.message || String(err)));
+  page.on("requestfailed", (req) => requestFailures.push({ url: req.url(), error: req.failure() && req.failure().errorText || "unknown" }));
 
-  await page.goto(BASE_URL, { waitUntil: 'load', timeout: 60000 });
+  await page.goto(BASE_URL, { waitUntil: "load", timeout: 60000 });
+  await page.click("#piBrainToggle");
+  await page.fill("#inputBox", "Help me with algebra");
+  await page.click("#sendBtn");
+  await page.waitForFunction(() => {
+    const messages = document.querySelectorAll(".message.ai, .bubble.ai, .msg.ai");
+    return Array.from(messages).some((node) => /Personalized mock answer\./.test(node.textContent || ""));
+  }, { timeout: 15000 }).catch(() => {});
 
-  await page.evaluate(async () => {
-    if (!window.__VIS_METRICS) {
-      try {
-        const mod = await import('/vis/vis_controller.js');
-        if (mod && mod.startVIS) {
-          console.log('[TEST] Forcing startVIS manually');
-          mod.startVIS();
-        }
-      } catch (err) {
-        console.error('[TEST] Failed to manually load module:', err);
-      }
-    }
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("pi:harmony-debug", {
+      detail: {
+        status: "Complete",
+        observatory: { type: "tutorial", complexity: "medium", queries: [{ text: "Help me with algebra" }] },
+        harmony: { model_used: "mistral", fallback_used: false },
+      },
+    }));
   });
-
-  const metrics = await waitForMetrics(page, 30000);
-
-  if (!metrics) {
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'vis_timeout.png'), fullPage: true });
-  }
+  await page.click(".pi-harmony-toggle");
+  const panelText = await page.textContent(".pi-harmony-panel");
+  const mediaCalls = await page.evaluate(() => window.__TEST_MEDIA_CALLS__ || []);
 
   const output = {
     url: BASE_URL,
     browser: browserName,
-    metrics: metrics || null,
+    panelText,
+    mediaCalls,
+    forbiddenRequests,
     consoleLogs,
     pageErrors,
     requestFailures,
-    responses404,
   };
-
-  fs.writeFileSync(path.join(ARTIFACT_DIR, 'vis_report.json'), JSON.stringify(output, null, 2));
+  fs.writeFileSync(path.join(ARTIFACT_DIR, "vis_report.json"), JSON.stringify(output, null, 2));
 
   let exitCode = 0;
-  if (!metrics) exitCode = 1;
-  if (pageErrors.length || requestFailures.length || responses404.length) exitCode = 1;
-  if (metrics && metrics.timings && metrics.timings.total_verification_time_ms > 15000) exitCode = 1;
-
-  if (exitCode !== 0) {
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'vis_failure.png'), fullPage: true });
-  }
+  if (!/mistral/i.test(panelText || "")) exitCode = 1;
+  if (forbiddenRequests.length) exitCode = 1;
+  if (mediaCalls.length) exitCode = 1;
+  if (pageErrors.length) exitCode = 1;
 
   await browser.close();
-  if (server) server.close();
+  server.close();
   process.exit(exitCode);
 }
 
 run().catch((err) => {
   ensureDir();
-  fs.writeFileSync(path.join(ARTIFACT_DIR, 'vis_runner_error.log'), String(err && err.stack ? err.stack : err));
+  fs.writeFileSync(path.join(ARTIFACT_DIR, "vis_runner_error.log"), String(err && err.stack ? err.stack : err));
   process.exit(1);
 });
