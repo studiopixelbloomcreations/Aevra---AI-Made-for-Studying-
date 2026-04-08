@@ -22,7 +22,8 @@ function splitQueries(message) {
 function classifyType(query) {
   const text = normalizeText(query).toLowerCase();
   if (/(^|\b)(code|coding|debug|bug|stack trace|api|function|javascript|python|sql|react|deploy)(\b|$)/.test(text)) return "coding";
-  if (/(^|\b)(research|compare|sources|investigate|deep dive|analyze deeply|evidence)(\b|$)/.test(text)) return "deep_research";
+  if (/(^|\b)(research|compare|sources|investigate|deep dive|analyze deeply|evidence|timeline|history of|in depth|detailed analysis|report|pros and cons|tradeoffs)(\b|$)/.test(text)) return "deep_research";
+  if ((text.length > 140 && /\b(why|how|compare|analyze|explain|timeline|history|impact|differences)\b/.test(text))) return "deep_research";
   if (/(^|\b)(tutorial|teach|explain|walk me through|step by step|how do i)(\b|$)/.test(text)) return "tutorial";
   if (/(^|\b)(write|story|poem|creative|brainstorm|ideas|lyrics|caption)(\b|$)/.test(text)) return "creative";
   return "casual";

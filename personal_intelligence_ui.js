@@ -4559,22 +4559,14 @@
     if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
       throw new Error("BROWSER_TTS_UNAVAILABLE");
     }
-    await primeAudioPlayback();
     return new Promise(function (resolve, reject) {
-      let finished = false;
+      let rejected = false;
+      let resolved = false;
       const utterance = new SpeechSynthesisUtterance(cleaned);
-      const startTimer = setTimeout(function () {
-        if (finished) return;
-        finished = true;
-        try { window.speechSynthesis.cancel(); } catch (e) {}
-        reject(new Error("BROWSER_TTS_START_TIMEOUT"));
-      }, Math.max(1200, Math.min(TTS_TIMEOUT_MS, 5000)));
       utterance.volume = 1;
       utterance.rate = 1;
       utterance.pitch = 1;
       utterance.onstart = function () {
-        if (finished) return;
-        clearTimeout(startTimer);
         visSpeechState = {
           active: true,
           text: cleaned,
@@ -4584,18 +4576,18 @@
         setAssistantState("speaking", "Speaking");
       };
       utterance.onend = function () {
-        if (finished) return;
-        finished = true;
-        clearTimeout(startTimer);
+        if (rejected) return;
         visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
         setAssistantState("listening", "Listening");
         armIdleTimer();
-        resolve(true);
+        if (!resolved) {
+          resolved = true;
+          resolve(true);
+        }
       };
       utterance.onerror = function (event) {
-        if (finished) return;
-        finished = true;
-        clearTimeout(startTimer);
+        if (rejected) return;
+        rejected = true;
         const errorCode = event && event.error ? String(event.error) : "BROWSER_TTS_ERROR";
         visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
         setAssistantState("idle", "Idle");
@@ -4605,10 +4597,13 @@
         window.speechSynthesis.cancel();
         try { window.speechSynthesis.resume(); } catch (e) {}
         window.speechSynthesis.speak(utterance);
+        if (!resolved) {
+          resolved = true;
+          resolve({ queued: true });
+        }
       } catch (error) {
-        if (finished) return;
-        finished = true;
-        clearTimeout(startTimer);
+        if (rejected) return;
+        rejected = true;
         reject(error);
       }
     });
@@ -5559,11 +5554,11 @@
       dbg("Puter TTS failed, fallback to browser TTS", e && e.message);
       addLog("assistant", "Tutor: Voice engine fallback (" + String((e && e.message) || "TTS error") + ").");
       try {
-        await withTimeout(speakWithBrowserFallback(cleanedText), Math.max(TTS_TIMEOUT_MS, 8000), "BROWSER_TTS_TIMEOUT");
+        await speakWithBrowserFallback(cleanedText);
         return { ok: true, provider: "browser_tts_fallback", fallback_from: String((e && e.message) || "unknown") };
       } catch (e2) {
         const blocked = String((e2 && e2.message) || "").toLowerCase();
-        if (blocked.includes("not allowed") || blocked.includes("user agent") || blocked.includes("timeout")) {
+        if (blocked.includes("not allowed") || blocked.includes("user agent")) {
           addLog("assistant", "Tutor: Audio playback is blocked. Tap the orb once, then try again.");
         }
         setAssistantState("idle", "Idle");
@@ -5641,6 +5636,7 @@
           observatory: actionData && actionData.observatory ? actionData.observatory : { type: mode, complexity: "action", queries: [{ text: t }] },
           harmony: actionData && actionData.agent_harmony ? actionData.agent_harmony : { model_used: "local_action", fallback_used: false },
           agent: agentContext,
+          ai_provider: actionData && actionData.ai_provider ? actionData.ai_provider : "local_action",
         });
         dbg("AI provider:", "local_action", "ok:", true);
         await playTutorTTS(actionSpeakText);
@@ -5675,6 +5671,7 @@
           observatory: data && data.observatory ? data.observatory : { type: mode, complexity: "-", queries: [{ text: t }] },
           harmony: data && data.agent_harmony ? data.agent_harmony : { model_used: "-", fallback_used: false },
           agent: agentContext,
+          ai_provider: data && data.ai_provider ? data.ai_provider : "",
         });
         addLog("assistant", "Tutor: Harmony error: " + String((data && data.ai_error) || "Harmony is unavailable right now."));
         setAssistantState("idle", "Idle");
@@ -5688,6 +5685,7 @@
           observatory: data && data.observatory ? data.observatory : { type: mode, complexity: "-", queries: [{ text: t }] },
           harmony: data && data.agent_harmony ? data.agent_harmony : { model_used: "-", fallback_used: false },
           agent: agentContext,
+          ai_provider: data && data.ai_provider ? data.ai_provider : "",
         });
         addLog("assistant", "Tutor: Harmony returned no response.");
         setAssistantState("idle", "Idle");
@@ -5713,6 +5711,7 @@
         observatory: data && data.observatory ? data.observatory : { type: mode, complexity: "-", queries: [{ text: t }] },
         harmony: data && data.agent_harmony ? data.agent_harmony : { model_used: data && data.ai_provider ? data.ai_provider : "agent_harmony", fallback_used: false },
         agent: agentContext,
+        ai_provider: data && data.ai_provider ? data.ai_provider : "",
       });
       dbg("AI provider:", data && data.ai_provider ? data.ai_provider : "agent_harmony", "ok:", true);
       await playTutorTTS(speakText);
@@ -5723,6 +5722,7 @@
         observatory: { type: detectSupportMode(t), complexity: "-", queries: [{ text: t }] },
         harmony: { model_used: "-", fallback_used: false },
         agent: getPiAgentRequestContext(),
+        ai_provider: "",
       });
       addLog("assistant", "Tutor: Request failed. Please try again.");
       setAssistantState("idle", "Idle");

@@ -106,6 +106,21 @@
       return out.join(", ") || "-";
     }
 
+    function selectPrimaryModel(harmony, detail) {
+      const plans = harmony && Array.isArray(harmony.query_plans) ? harmony.query_plans : [];
+      for (let i = 0; i < plans.length; i += 1) {
+        const attempts = plans[i] && Array.isArray(plans[i].attempts) ? plans[i].attempts : [];
+        const okAttempt = attempts.find(function (attempt) { return !!(attempt && attempt.ok); });
+        if (okAttempt && okAttempt.model) return String(okAttempt.model);
+        if (plans[i] && plans[i].model_used) return String(plans[i].model_used);
+      }
+      const harmonyModel = text(harmony && harmony.model_used, "");
+      if (harmonyModel && harmonyModel !== "agent_harmony") return harmonyModel.replace(/^agent_harmony:/, "");
+      const provider = text(detail && detail.ai_provider, "");
+      if (provider) return provider.replace(/^agent_harmony:/, "");
+      return "-";
+    }
+
     function deriveComplexity(observatory, harmony) {
       const direct = text(observatory && observatory.complexity, "");
       if (direct) return direct;
@@ -123,10 +138,7 @@
       fields.type.textContent = text(observatory.type, "idle");
       fields.complexity.textContent = deriveComplexity(observatory, harmony);
       fields.queries.textContent = String((observatory.queries && observatory.queries.length) || 0);
-      fields.model.textContent = text(
-        harmony.model_used && String(harmony.model_used).replace(/^agent_harmony:/, ""),
-        detail && detail.ai_provider ? String(detail.ai_provider).replace(/^agent_harmony:/, "") : "-"
-      );
+      fields.model.textContent = selectPrimaryModel(harmony, detail);
       fields.models.textContent = flattenModels(harmony);
       fields.fallback.textContent = harmony.fallback_used ? "Yes" : "No";
       fields.agent.textContent = text(agent.user_id, "-");
