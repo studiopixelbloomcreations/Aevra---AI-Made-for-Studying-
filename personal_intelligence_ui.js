@@ -983,7 +983,29 @@
     const answers = agent.personalization_answers && typeof agent.personalization_answers === "object"
       ? agent.personalization_answers
       : {};
-    return Object.keys(answers).length >= VIS_PERSONALIZE_QUESTIONS.length;
+    const uniqueId = String(agent.unique_identifier || "").trim();
+    const tailored = agent.tailored_agent && typeof agent.tailored_agent === "object" ? agent.tailored_agent : {};
+    const preferredName = String(
+      answers.preferred_name ||
+      tailored.preferred_name ||
+      (profile && profile.user_identity && profile.user_identity.preferred_name) ||
+      ""
+    ).trim();
+    const fullName = String(
+      answers.full_name ||
+      tailored.full_name ||
+      (profile && profile.user_identity && profile.user_identity.full_name) ||
+      ""
+    ).trim();
+    const answerCountOk = Object.keys(answers).length >= VIS_PERSONALIZE_QUESTIONS.length;
+    const namingOk = !!(preferredName || fullName);
+    const tailoredOk = !!(
+      tailored &&
+      typeof tailored === "object" &&
+      tailored.response_identity_rules &&
+      typeof tailored.response_identity_rules === "object"
+    );
+    return !!(answerCountOk && uniqueId && namingOk && tailoredOk);
   }
 
   function openVisPersonalize(profile) {
