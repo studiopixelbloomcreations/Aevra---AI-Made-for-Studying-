@@ -27,6 +27,7 @@ const rootFilesToCopy = [
   "login.js",
   "loginRedirect.js",
   "mic.js",
+  "personal_intelligence_ui.js",
   "personalization_sync.js",
   "points.js",
   "profile.js",
