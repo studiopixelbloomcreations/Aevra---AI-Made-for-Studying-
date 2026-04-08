@@ -325,6 +325,8 @@
   let visScanLoopTimer = null;
   let visProfileSaveTimer = null;
   let visExpectedProfileFile = "";
+  let visRecentPersonalizationFile = "";
+  let visRecentPersonalizationAt = 0;
   let visUnknownFaceSince = 0;
   const VIS_DISABLE_EXTERNAL_RUNTIME = true;
   let visBackendRequestBusy = false;
@@ -1008,6 +1010,42 @@
     return !!(answerCountOk && uniqueId && namingOk && tailoredOk);
   }
 
+  function getStoredPersonalizeAnswers(profile) {
+    const p = profile && typeof profile === "object" ? profile : {};
+    const agent = p.personal_intelligence_agent && typeof p.personal_intelligence_agent === "object"
+      ? p.personal_intelligence_agent
+      : {};
+    const personalization = p.personalization_profile && typeof p.personalization_profile === "object"
+      ? p.personalization_profile
+      : {};
+    const raw = Object.assign(
+      {},
+      personalization.onboarding_answers || {},
+      agent.personalization_answers || {}
+    );
+    const out = {};
+    VIS_PERSONALIZE_QUESTIONS.forEach(function (q) {
+      out[q.id] = String(raw[q.id] || "").trim();
+    });
+    return out;
+  }
+
+  function hasRecentPersonalizationCompletion(profile) {
+    const p = profile && typeof profile === "object" ? profile : {};
+    const fileName = String(p.file_name || "").trim();
+    if (fileName && visRecentPersonalizationFile === fileName && (Date.now() - visRecentPersonalizationAt) < 120000) {
+      return true;
+    }
+    const completedAt = String(
+      (p.session_state && p.session_state.personalization_completed_at) ||
+      (p.personal_intelligence_agent && p.personal_intelligence_agent.personalization_completed_at) ||
+      ""
+    ).trim();
+    if (!completedAt) return false;
+    const stamp = Date.parse(completedAt);
+    return Number.isFinite(stamp) && (Date.now() - stamp) < 120000;
+  }
+
   function openVisPersonalize(profile) {
     if (!visPersonalizeEl) return;
     if (visPersonalizeOpen) return;
@@ -1015,7 +1053,7 @@
     visPersonalizeState = {
       loading: false,
       profile: profile || null,
-      answers: {},
+      answers: getStoredPersonalizeAnswers(profile),
     };
     setAssistantStateForVisOffline("Personalization required");
     panel.classList.add("pi-vis-personalize-open");
@@ -1176,6 +1214,7 @@
       full_name: String(safeAnswers.full_name || "").trim(),
     });
     profile.personalization_profile = Object.assign({}, profile.personalization_profile || {}, visPersonalizationProfile || {});
+    profile.personalization_profile.onboarding_answers = Object.assign({}, safeAnswers);
     profile.ai_behavior_configuration = Object.assign({}, profile.ai_behavior_configuration || {}, visBehaviorConfig || {});
     profile.learned_preferences = Object.assign({}, profile.learned_preferences || {}, knownFacts || {});
     profile.personal_intelligence_agent = Object.assign({}, profile.personal_intelligence_agent || {}, {
@@ -1210,12 +1249,18 @@
         status: "ready",
         profile_verified: !!verification.ok,
         profile_verified_at: verification.verified_at || nowIso(),
+        personalization_completed_at: nowIso(),
         personalization_prompt: String(
           (savedConfig.ai_config && savedConfig.ai_config.personalization_prompt) ||
           (savedConfig.user_config && savedConfig.user_config.ai_config && savedConfig.user_config.ai_config.personalization_prompt) ||
           ""
         ).trim(),
       });
+      profile.session_state = Object.assign({}, profile.session_state || {}, {
+        personalization_completed_at: nowIso(),
+      });
+      visRecentPersonalizationFile = String(profile.file_name || "").trim();
+      visRecentPersonalizationAt = Date.now();
       if (visActiveProfile && visActiveProfile.file_name === profile.file_name) {
         scheduleVisProfileSave();
       } else {
@@ -1241,6 +1286,10 @@
   function ensureVisPersonalAgent(profile, reason) {
     if (!profile) return;
     if (hasVisPersonalAgent(profile)) return;
+    if (hasRecentPersonalizationCompletion(profile)) {
+      pushVisDebug("Skipping personalization reopen after recent completion (" + String(reason || "recent_completion") + ").");
+      return;
+    }
     if (visPersonalizeOpen) return;
     if (visSetupOpen || visVerificationBusy || visScanning) return;
     pushVisDebug("Opening personalization flow (" + String(reason || "missing_agent") + ").");
