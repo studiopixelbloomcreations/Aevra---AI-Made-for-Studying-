@@ -796,11 +796,6 @@
       piBrainToggle.setAttribute('aria-pressed', state.piChatMode ? 'true' : 'false');
       piBrainToggle.title = state.piChatMode ? 'Personal Intelligence brain active' : 'Main Tutor brain active';
     }
-    if(personalIntelligenceTab){
-      personalIntelligenceTab.classList.toggle('active', state.piChatMode);
-      personalIntelligenceTab.setAttribute('aria-pressed', state.piChatMode ? 'true' : 'false');
-      personalIntelligenceTab.title = state.piChatMode ? 'Personal Intelligence active' : 'Open Personal Intelligence';
-    }
     if(inputBox){
       inputBox.placeholder = state.piChatMode
         ? 'Personal Intelligence mode: ask anything...'
@@ -843,6 +838,108 @@
       inputBox.focus();
       try { inputBox.dispatchEvent(new Event('input')); } catch (e) {}
     }
+  }
+
+  async function requestPersonalIntelligenceAnswer(text, historyOverride){
+    const history = Array.isArray(historyOverride)
+      ? historyOverride
+      : [];
+    const identity = getPiAuthIdentity();
+    const profile = await ensurePiProfile(identity);
+    const personalizationPrompt = getPiPersonalizationPrompt(profile);
+    await ensurePuterReady(true);
+    const selectedMode = getPiModelMode();
+    const effectiveMode = selectedMode === 'pi_dynamic' ? detectPiDynamicMode(text) : selectedMode;
+    setPiActiveModeLabel(effectiveMode);
+    const piModel = getPiModel();
+    let puterAnswer = '';
+
+    emitHarmonyDebug({
+      status: 'Processing...',
+      observatory: {
+        type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
+        complexity: effectiveMode === 'agent_swarm' || effectiveMode === 'all_in_one' ? 'high' : 'medium',
+        queries: [{ text: text }]
+      },
+      harmony: {
+        model_used: 'Selecting...',
+        fallback_used: false
+      }
+    });
+
+    if(effectiveMode === 'agent_swarm'){
+      puterAnswer = await runAgentSwarmSummary([{ role: 'system', content: personalizationPrompt }].concat(history), text);
+    } else if(effectiveMode === 'all_in_one'){
+      const researchPrompt = [{ role: 'system', content: getPiPromptByMode('research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
+      const deepPrompt = [{ role: 'system', content: getPiPromptByMode('deep_research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
+      const researchAnswer = await runPuterChatWithModel(researchPrompt, piModel);
+      const deepAnswer = await runPuterChatWithModel(deepPrompt, piModel);
+      const allInOnePrompt = [
+        { role: 'system', content: getPiPromptByMode('all_in_one') + '\n\n' + personalizationPrompt },
+        { role: 'user', content: 'User request:\n' + text + '\n\nResearch output:\n' + String(researchAnswer || 'none') + '\n\nDeep research output:\n' + String(deepAnswer || 'none') }
+      ];
+      puterAnswer = await runPuterChatWithModel(allInOnePrompt, piModel);
+    } else {
+      const piPrompt = getPiPromptByMode(effectiveMode) + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt;
+      const puterResp = await window.puter.ai.chat([{ role: 'system', content: piPrompt }].concat(history).concat([{ role: 'user', content: text }]), { model: piModel });
+      puterAnswer = extractPuterText(puterResp);
+    }
+
+    if(!puterAnswer){
+      throw new Error('Personal Intelligence model returned an empty response.');
+    }
+
+    const reqBody = {
+      message: text,
+      user_id: identity.user_id,
+      email: identity.email,
+      name: identity.name,
+      avatar: identity.avatar,
+      identity: identity,
+      language: state.language,
+      subject: state.subject,
+      title: 'Personal Intelligence',
+      history: history,
+      known_facts: getPiKnownFacts(),
+      profile: profile,
+      puter_reply: {
+        answer: puterAnswer,
+        model: piModel
+      },
+      puter_model: piModel,
+      pi_processing_mode: effectiveMode,
+      pi_requested_mode: selectedMode,
+      runtime_mode: 'cloud_only'
+    };
+    const res = await (window.Api && window.Api.apiFetch
+      ? window.Api.apiFetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) })
+      : fetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) }));
+    const data = await safeReadJson(res);
+    if(!res.ok){
+      throw new Error('Personal Intelligence request failed (HTTP ' + res.status + '): ' + getBackendErrorMessage(data));
+    }
+    const answerRaw = data && data.answer ? String(data.answer) : puterAnswer;
+    const answer = answerRaw ? stripAwardPointsLine(answerRaw) : 'Personal Intelligence returned an empty response.';
+    emitHarmonyDebug({
+      status: 'Complete',
+      observatory: data && data.observatory ? data.observatory : {
+        type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
+        complexity: 'medium',
+        queries: [{ text: text }]
+      },
+      harmony: data && data.agent_harmony ? data.agent_harmony : {
+        model_used: piModel,
+        fallback_used: false
+      },
+      user_profile: data && data.user_profile ? data.user_profile : profile
+    });
+    return {
+      answer,
+      data,
+      profile,
+      effectiveMode,
+      piModel
+    };
   }
 
   function fallbackMainModels(){
@@ -1245,94 +1342,8 @@
         : [];
 
       try{
-        const identity = getPiAuthIdentity();
-        const profile = await ensurePiProfile(identity);
-        const personalizationPrompt = getPiPersonalizationPrompt(profile);
-        await ensurePuterReady(true);
-        const selectedMode = getPiModelMode();
-        const effectiveMode = selectedMode === 'pi_dynamic' ? detectPiDynamicMode(text) : selectedMode;
-        setPiActiveModeLabel(effectiveMode);
-        const piModel = getPiModel();
-        let puterAnswer = '';
-        emitHarmonyDebug({
-          status: 'Processing...',
-          observatory: {
-            type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
-            complexity: effectiveMode === 'agent_swarm' || effectiveMode === 'all_in_one' ? 'high' : 'medium',
-            queries: [{ text: text }]
-          },
-          harmony: {
-            model_used: 'Selecting...',
-            fallback_used: false
-          }
-        });
-
-        if(effectiveMode === 'agent_swarm'){
-          puterAnswer = await runAgentSwarmSummary([{ role: 'system', content: personalizationPrompt }].concat(history), text);
-        } else if(effectiveMode === 'all_in_one'){
-          const researchPrompt = [{ role: 'system', content: getPiPromptByMode('research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
-          const deepPrompt = [{ role: 'system', content: getPiPromptByMode('deep_research') + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt }].concat(history).concat([{ role: 'user', content: text }]);
-          const researchAnswer = await runPuterChatWithModel(researchPrompt, piModel);
-          const deepAnswer = await runPuterChatWithModel(deepPrompt, piModel);
-          const allInOnePrompt = [
-            { role: 'system', content: getPiPromptByMode('all_in_one') + '\n\n' + personalizationPrompt },
-            { role: 'user', content: 'User request:\n' + text + '\n\nResearch output:\n' + String(researchAnswer || 'none') + '\n\nDeep research output:\n' + String(deepAnswer || 'none') }
-          ];
-          puterAnswer = await runPuterChatWithModel(allInOnePrompt, piModel);
-        } else {
-          const piPrompt = getPiPromptByMode(effectiveMode) + ' Current subject: ' + state.subject + '. Respond in ' + state.language + '.\n\n' + personalizationPrompt;
-          const puterResp = await window.puter.ai.chat([{ role: 'system', content: piPrompt }].concat(history).concat([{ role: 'user', content: text }]), { model: piModel });
-          puterAnswer = extractPuterText(puterResp);
-        }
-
-        if(!puterAnswer){
-          throw new Error('Personal Intelligence model returned an empty response.');
-        }
-
-        const reqBody = {
-          message: text,
-          user_id: identity.user_id,
-          email: identity.email,
-          name: identity.name,
-          avatar: identity.avatar,
-          identity: identity,
-          language: state.language,
-          subject: state.subject,
-          title: 'Personal Intelligence',
-          history: history,
-          known_facts: getPiKnownFacts(),
-          profile: profile,
-          puter_reply: {
-            answer: puterAnswer,
-            model: piModel
-          },
-          puter_model: piModel,
-          pi_processing_mode: effectiveMode,
-          pi_requested_mode: selectedMode,
-          runtime_mode: 'cloud_only'
-        };
-        const res = await (window.Api && window.Api.apiFetch
-          ? window.Api.apiFetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) })
-          : fetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(reqBody) }));
-        const data = await safeReadJson(res);
-        if(!res.ok){
-          throw new Error('Personal Intelligence request failed (HTTP ' + res.status + '): ' + getBackendErrorMessage(data));
-        }
-        const answerRaw = data && data.answer ? String(data.answer) : puterAnswer;
-        const answer = answerRaw ? stripAwardPointsLine(answerRaw) : 'Personal Intelligence returned an empty response.';
-        emitHarmonyDebug({
-          status: 'Complete',
-          observatory: data && data.observatory ? data.observatory : {
-            type: effectiveMode === 'research' ? 'deep_research' : effectiveMode,
-            complexity: 'medium',
-            queries: [{ text: text }]
-          },
-          harmony: data && data.agent_harmony ? data.agent_harmony : {
-            model_used: piModel,
-            fallback_used: false
-          },
-          user_profile: data && data.user_profile ? data.user_profile : profile
-        });
+        const piResult = await requestPersonalIntelligenceAnswer(text, history);
+        const answer = piResult && piResult.answer ? String(piResult.answer) : 'Personal Intelligence returned an empty response.';
         const lastAi=[...chat.messages].reverse().find(m=>m.role==='ai');
         if(lastAi) lastAi.content=answer; emitProgressEvent('g9:ai_response', { chatId: state.active, subject: state.subject, text: answer });
         renderActiveChat(); saveChats();
@@ -1466,8 +1477,9 @@
 
   if (personalIntelligenceTab) {
     personalIntelligenceTab.addEventListener('click', () => {
-      openPersonalIntelligenceMode();
-      toast('Personal Intelligence opened');
+      try {
+        window.dispatchEvent(new CustomEvent('pi:open-voice-panel'));
+      } catch (e) {}
     });
   }
 
@@ -1589,6 +1601,18 @@
   setPiModelMode(getPiModelMode());
   setPiActiveModeLabel(getPiModelMode());
   setPiChatMode(state.piChatMode);
+  window.PersonalIntelligenceRuntime = {
+    openTextMode: openPersonalIntelligenceMode,
+    request: requestPersonalIntelligenceAnswer,
+    speakText: function(text){
+      const utterance = new SpeechSynthesisUtterance(String(text || ''));
+      utterance.lang = state.language === 'Sinhala' ? 'si-LK' : 'en-US';
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {}
+    }
+  };
   renderChats(); renderActiveChat(); if(!state.active && state.chats.length===0) createChat('New Chat');
   
   // Initial welcome panel check
