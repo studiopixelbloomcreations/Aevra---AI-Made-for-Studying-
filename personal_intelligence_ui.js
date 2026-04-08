@@ -4526,6 +4526,89 @@
     throw new Error("PUTER_TTS_UNAVAILABLE");
   }
 
+  function withTimeout(promise, timeoutMs, errorMessage) {
+    return new Promise(function (resolve, reject) {
+      let settled = false;
+      const timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error(errorMessage || "TIMEOUT"));
+      }, Math.max(1, Number(timeoutMs || 1)));
+      Promise.resolve(promise).then(function (value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }).catch(function (error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
+  }
+
+  async function speakWithBrowserFallback(text) {
+    const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+    if (!cleaned) throw new Error("TTS_TEXT_EMPTY");
+    if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
+      throw new Error("BROWSER_TTS_UNAVAILABLE");
+    }
+    await primeAudioPlayback();
+    return new Promise(function (resolve, reject) {
+      let finished = false;
+      const utterance = new SpeechSynthesisUtterance(cleaned);
+      const startTimer = setTimeout(function () {
+        if (finished) return;
+        finished = true;
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+        reject(new Error("BROWSER_TTS_START_TIMEOUT"));
+      }, Math.max(1200, Math.min(TTS_TIMEOUT_MS, 5000)));
+      utterance.volume = 1;
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.onstart = function () {
+        if (finished) return;
+        clearTimeout(startTimer);
+        visSpeechState = {
+          active: true,
+          text: cleaned,
+          started_at_ms: Date.now(),
+          provider: "speech_synthesis",
+        };
+        setAssistantState("speaking", "Speaking");
+      };
+      utterance.onend = function () {
+        if (finished) return;
+        finished = true;
+        clearTimeout(startTimer);
+        visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
+        setAssistantState("listening", "Listening");
+        armIdleTimer();
+        resolve(true);
+      };
+      utterance.onerror = function (event) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(startTimer);
+        const errorCode = event && event.error ? String(event.error) : "BROWSER_TTS_ERROR";
+        visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
+        setAssistantState("idle", "Idle");
+        reject(new Error(errorCode));
+      };
+      try {
+        window.speechSynthesis.cancel();
+        try { window.speechSynthesis.resume(); } catch (e) {}
+        window.speechSynthesis.speak(utterance);
+      } catch (error) {
+        if (finished) return;
+        finished = true;
+        clearTimeout(startTimer);
+        reject(error);
+      }
+    });
+  }
+
   async function ensurePuterReady(interactive) {
     if (isOffline()) throw new Error("OFFLINE_MODE");
     if (window.__VIS_TEST_USE_MOCK || navigator.onLine === false) return;
@@ -5396,10 +5479,15 @@
   }
 
   async function playTutorTTS(text) {
+    const cleanedText = String(text || "").replace(/\s+/g, " ").trim();
+    if (!cleanedText) {
+      setAssistantState("idle", "Idle");
+      return;
+    }
     if (!visCanOperateAI()) {
       visPendingResponse = {
-        answer: String(text || ""),
-        speakText: String(text || ""),
+        answer: cleanedText,
+        speakText: cleanedText,
         ts: Date.now(),
       };
       scheduleVisProfileSave();
@@ -5408,7 +5496,6 @@
     stopTutorAudio();
     try {
       await primeAudioPlayback();
-      const cleanedText = String(text || "").replace(/\s+/g, " ").trim();
       visSpeechState = {
         active: false,
         text: cleanedText,
@@ -5416,7 +5503,7 @@
         provider: "audio_element",
       };
       const voiceOptions = getSelectedPuterVoiceOptions();
-      const out = await requestPuterTts(cleanedText, voiceOptions);
+      const out = await withTimeout(requestPuterTts(cleanedText, voiceOptions), TTS_TIMEOUT_MS, "PUTER_TTS_TIMEOUT");
       const normalized = normalizePuterTtsSource(out);
       if (!normalized || !normalized.src) throw new Error("PUTER_EMPTY_AUDIO");
       const url = normalized.src;
@@ -5424,55 +5511,56 @@
       tutorAudio.__revoke = !!normalized.revoke;
       tutorAudio.preload = "auto";
       tutorAudio.playsInline = true;
+      tutorAudio.volume = 1;
       stopSpeakerAnalyser();
       connectSpeakerAnalyserForAudioElement(tutorAudio);
-      tutorAudio.onplay = function () {
-        visSpeechState.active = true;
-        visSpeechState.started_at_ms = Date.now();
-        setAssistantState("speaking", "Speaking");
-      };
-      tutorAudio.onended = function () {
-        visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
-        setAssistantState("listening", "Listening");
-        armIdleTimer();
-        try { if (tutorAudio && tutorAudio.__revoke) URL.revokeObjectURL(url); } catch (e) {}
-      };
-      try {
-        await tutorAudio.play();
-      } catch (playErr) {
-        const msg = String((playErr && playErr.message) || "").toLowerCase();
-        if ((playErr && playErr.name === "NotAllowedError") || msg.includes("not allowed") || msg.includes("user agent")) {
-          throw new Error("Audio playback blocked on this device. Tap the Tutor orb once, allow media/mic, then try again.");
-        }
-        throw playErr;
-      }
+      await withTimeout(new Promise(function (resolve, reject) {
+        let ended = false;
+        const cleanup = function () {
+          tutorAudio.onplay = null;
+          tutorAudio.onended = null;
+          tutorAudio.onerror = null;
+        };
+        tutorAudio.onplay = function () {
+          visSpeechState.active = true;
+          visSpeechState.started_at_ms = Date.now();
+          setAssistantState("speaking", "Speaking");
+        };
+        tutorAudio.onended = function () {
+          if (ended) return;
+          ended = true;
+          cleanup();
+          visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
+          setAssistantState("listening", "Listening");
+          armIdleTimer();
+          try { if (tutorAudio && tutorAudio.__revoke) URL.revokeObjectURL(url); } catch (e) {}
+          resolve(true);
+        };
+        tutorAudio.onerror = function () {
+          if (ended) return;
+          ended = true;
+          cleanup();
+          reject(new Error("AUDIO_ELEMENT_ERROR"));
+        };
+        tutorAudio.play().catch(function (playErr) {
+          if (ended) return;
+          ended = true;
+          cleanup();
+          reject(playErr);
+        });
+      }), Math.max(TTS_TIMEOUT_MS, 15000), "AUDIO_PLAYBACK_TIMEOUT");
     } catch (e) {
       dbg("Puter TTS failed, fallback to browser TTS", e && e.message);
       addLog("assistant", "Tutor: Voice engine fallback (" + String((e && e.message) || "TTS error") + ").");
       try {
-        const u = new SpeechSynthesisUtterance(String(text || ""));
-        u.onstart = function () {
-          visSpeechState = {
-            active: true,
-            text: String(text || ""),
-            started_at_ms: Date.now(),
-            provider: "speech_synthesis",
-          };
-          setAssistantState("speaking", "Speaking");
-        };
-        u.onend = function () {
-          visSpeechState = { active: false, text: "", started_at_ms: 0, provider: "" };
-          setAssistantState("listening", "Listening");
-          armIdleTimer();
-        };
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
+        await withTimeout(speakWithBrowserFallback(cleanedText), Math.max(TTS_TIMEOUT_MS, 8000), "BROWSER_TTS_TIMEOUT");
       } catch (e2) {
         const blocked = String((e2 && e2.message) || "").toLowerCase();
-        if (blocked.includes("not allowed") || blocked.includes("user agent")) {
-          addLog("assistant", "Tutor: iPhone blocked audio. Tap the orb once and allow permissions, then speak again.");
+        if (blocked.includes("not allowed") || blocked.includes("user agent") || blocked.includes("timeout")) {
+          addLog("assistant", "Tutor: Audio playback is blocked. Tap the orb once, then try again.");
         }
         setAssistantState("idle", "Idle");
+        throw e2;
       }
     }
   }
