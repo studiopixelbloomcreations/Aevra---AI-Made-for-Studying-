@@ -85,16 +85,35 @@
     const aiConfig = source.ai_config && typeof source.ai_config === "object"
       ? source.ai_config
       : {};
+    const onboardingAnswers = Object.assign({}, personalization.onboarding_answers || {});
+    const preferredName = String(
+      onboardingAnswers.preferred_name ||
+      (source.user_identity && source.user_identity.preferred_name) ||
+      (source.learned_preferences && source.learned_preferences.preferred_name) ||
+      (source.learned_preferences && source.learned_preferences.name) ||
+      (personalization.identity_snapshot && personalization.identity_snapshot.name) ||
+      (identity && identity.name) ||
+      ""
+    ).trim();
+    const fullName = String(
+      onboardingAnswers.full_name ||
+      (source.user_identity && source.user_identity.full_name) ||
+      (source.learned_preferences && source.learned_preferences.full_name) ||
+      (identity && identity.name) ||
+      ""
+    ).trim();
     const username = String((identity && (identity.name || identity.email || identity.user_id)) || "user").trim() || "user";
     const fileName = String(identity && identity.user_id ? identity.user_id : username).replace(/[^a-zA-Z0-9._-]+/g, "_") + VIS_PROFILE_EXTENSION;
-    const onboardingAnswers = Object.assign({}, personalization.onboarding_answers || {});
     const agentReady = Object.keys(onboardingAnswers).length >= VIS_PERSONALIZE_QUESTIONS.length;
     return {
       file_name: fileName,
       profile_version: 2,
       user_identity: {
         username: String(identity && identity.user_id || username),
-        display_name: String(identity && (identity.name || identity.email || identity.user_id) || username),
+        display_name: String(preferredName || fullName || (identity && (identity.name || identity.email || identity.user_id)) || username),
+        preferred_name: preferredName,
+        full_name: fullName,
+        account_user_id: String(identity && identity.user_id || ""),
         email: String(identity && identity.email || ""),
         avatar: String(identity && identity.avatar || ""),
       },
@@ -110,12 +129,57 @@
         provider: "auth_identity",
         personalization_answers: onboardingAnswers,
         unique_identifier: String(source.unique_id || ""),
+        tailored_agent: Object.assign({}, source.personal_intelligence_agent && source.personal_intelligence_agent.tailored_agent || {}, {
+          preferred_name: preferredName,
+          full_name: fullName,
+          interests: Array.isArray(personalization.interests) ? personalization.interests.slice(0, 12) : [],
+          goals: Array.isArray(personalization.goals) ? personalization.goals.slice(0, 12) : [],
+          tone: String((aiConfig && aiConfig.tone) || "").trim(),
+          communication_style: String((aiConfig && aiConfig.communication_style) || "").trim(),
+        }),
       },
       session_state: Object.assign({}, source.session_state || {}, {
         paused: false,
         assistant_state: "listening",
       }),
     };
+  }
+
+  function getVisProfileNames(profile) {
+    const p = profile && typeof profile === "object" ? profile : {};
+    const agent = p.personal_intelligence_agent && typeof p.personal_intelligence_agent === "object" ? p.personal_intelligence_agent : {};
+    const answers = agent.personalization_answers && typeof agent.personalization_answers === "object" ? agent.personalization_answers : {};
+    const userIdentity = p.user_identity && typeof p.user_identity === "object" ? p.user_identity : {};
+    const prefs = p.learned_preferences && typeof p.learned_preferences === "object" ? p.learned_preferences : {};
+    return {
+      preferred_name: String(
+        answers.preferred_name ||
+        userIdentity.preferred_name ||
+        prefs.preferred_name ||
+        prefs.name ||
+        userIdentity.display_name ||
+        ""
+      ).trim(),
+      full_name: String(
+        answers.full_name ||
+        userIdentity.full_name ||
+        prefs.full_name ||
+        ""
+      ).trim(),
+    };
+  }
+
+  function getVisDisplayName(profile) {
+    const names = getVisProfileNames(profile);
+    const p = profile && typeof profile === "object" ? profile : {};
+    return String(
+      names.preferred_name ||
+      names.full_name ||
+      (p.user_identity && p.user_identity.display_name) ||
+      (p.user_identity && p.user_identity.username) ||
+      p.file_name ||
+      "Unknown"
+    ).trim() || "Unknown";
   }
   let enabled = false;
   let recognition = null;
@@ -1026,8 +1090,10 @@
       personalization_questions: VIS_PERSONALIZE_QUESTIONS.map(function (q) { return q.id; }),
     };
     const facts = {
+      name: safeAnswers.preferred_name || safeAnswers.full_name || "",
       preferred_name: safeAnswers.preferred_name || "",
       full_name: safeAnswers.full_name || "",
+      formal_name: safeAnswers.full_name || "",
       interests: safeAnswers.interests || "",
       favorite_subjects: safeAnswers.favorite_subjects || "",
       goals: safeAnswers.goals || "",
@@ -1049,9 +1115,26 @@
     visBehaviorConfig = Object.assign({}, visBehaviorConfig || {}, {
       preferred_conversation_tone: safeAnswers.preferred_tone || visBehaviorConfig.preferred_conversation_tone,
     });
+    profile.user_identity = Object.assign({}, profile.user_identity || {}, {
+      display_name: String(safeAnswers.preferred_name || safeAnswers.full_name || (profile.user_identity && profile.user_identity.display_name) || "").trim(),
+      preferred_name: String(safeAnswers.preferred_name || "").trim(),
+      full_name: String(safeAnswers.full_name || "").trim(),
+    });
     profile.personalization_profile = Object.assign({}, profile.personalization_profile || {}, visPersonalizationProfile || {});
     profile.ai_behavior_configuration = Object.assign({}, profile.ai_behavior_configuration || {}, visBehaviorConfig || {});
     profile.learned_preferences = Object.assign({}, profile.learned_preferences || {}, knownFacts || {});
+    profile.personal_intelligence_agent = Object.assign({}, profile.personal_intelligence_agent || {}, {
+      tailored_agent: {
+        unique_id: String((profile.personal_intelligence_agent && profile.personal_intelligence_agent.unique_identifier) || "").trim(),
+        preferred_name: String(safeAnswers.preferred_name || "").trim(),
+        full_name: String(safeAnswers.full_name || "").trim(),
+        interests: parseCsvList(safeAnswers.interests),
+        goals: parseCsvList(safeAnswers.goals),
+        learning_style: String(safeAnswers.learning_style || "").trim(),
+        preferred_tone: String(safeAnswers.preferred_tone || "").trim(),
+        hobbies: parseCsvList(safeAnswers.hobbies),
+      },
+    });
     if (visActiveProfile && visActiveProfile.file_name === profile.file_name) {
       scheduleVisProfileSave();
     } else {
@@ -3111,7 +3194,7 @@
       return;
     }
     visActiveProfile = p;
-    visLastKnownUserLabel = String((p.user_identity && p.user_identity.username) || p.file_name || "Unknown");
+    visLastKnownUserLabel = getVisDisplayName(p);
     visPersonalizationProfile = Object.assign({}, visPersonalizationProfile || {}, p.personalization_profile || {});
     visBehaviorConfig = Object.assign({}, visBehaviorConfig || {}, p.ai_behavior_configuration || {});
     visUserInstance = {
@@ -3355,6 +3438,9 @@
     if (!profile || !config || typeof config !== "object") return profile;
     const next = Object.assign({}, profile);
     const sourceConfig = config.user_config && typeof config.user_config === "object" ? config.user_config : config;
+    const onboardingAnswers = sourceConfig.personalization_data && sourceConfig.personalization_data.onboarding_answers && typeof sourceConfig.personalization_data.onboarding_answers === "object"
+      ? sourceConfig.personalization_data.onboarding_answers
+      : {};
     if (sourceConfig.personalization_data || sourceConfig.ai_config) {
       next.personalization_profile = Object.assign({}, next.personalization_profile || {}, sourceConfig.personalization_data || {});
       next.ai_behavior_configuration = Object.assign({}, next.ai_behavior_configuration || {}, sourceConfig.ai_config || {});
@@ -3372,6 +3458,27 @@
       cloud_config: sourceConfig,
       unique_identifier: sourceConfig.unique_id || sourceConfig.unique_identifier || "",
       status: "ready",
+      personalization_answers: Object.assign({}, next.personal_intelligence_agent && next.personal_intelligence_agent.personalization_answers || {}, onboardingAnswers),
+      tailored_agent: Object.assign({}, next.personal_intelligence_agent && next.personal_intelligence_agent.tailored_agent || {}, {
+        unique_id: sourceConfig.unique_id || sourceConfig.unique_identifier || "",
+        preferred_name: String(onboardingAnswers.preferred_name || "").trim(),
+        full_name: String(onboardingAnswers.full_name || "").trim(),
+        interests: Array.isArray(sourceConfig.personalization_data && sourceConfig.personalization_data.interests) ? sourceConfig.personalization_data.interests.slice(0, 12) : [],
+        goals: Array.isArray(sourceConfig.personalization_data && sourceConfig.personalization_data.goals) ? sourceConfig.personalization_data.goals.slice(0, 12) : [],
+        tone: String(sourceConfig.ai_config && sourceConfig.ai_config.tone || "").trim(),
+        communication_style: String(sourceConfig.ai_config && sourceConfig.ai_config.communication_style || "").trim(),
+      }),
+    });
+    next.user_identity = Object.assign({}, next.user_identity || {}, {
+      display_name: String(onboardingAnswers.preferred_name || onboardingAnswers.full_name || (next.user_identity && next.user_identity.display_name) || "").trim() || String((next.user_identity && next.user_identity.display_name) || ""),
+      preferred_name: String(onboardingAnswers.preferred_name || (next.user_identity && next.user_identity.preferred_name) || "").trim(),
+      full_name: String(onboardingAnswers.full_name || (next.user_identity && next.user_identity.full_name) || "").trim(),
+    });
+    next.learned_preferences = Object.assign({}, next.learned_preferences || {}, {
+      name: String(onboardingAnswers.preferred_name || onboardingAnswers.full_name || (next.learned_preferences && next.learned_preferences.name) || "").trim(),
+      preferred_name: String(onboardingAnswers.preferred_name || (next.learned_preferences && next.learned_preferences.preferred_name) || "").trim(),
+      full_name: String(onboardingAnswers.full_name || (next.learned_preferences && next.learned_preferences.full_name) || "").trim(),
+      formal_name: String(onboardingAnswers.full_name || (next.learned_preferences && next.learned_preferences.formal_name) || "").trim(),
     });
     return next;
   }
@@ -4244,10 +4351,19 @@
         pauseForVisOffline("Offline - sign in");
         return null;
       }
-      const out = await fetchSiteJson("/personal-intelligence/config?user_id=" + encodeURIComponent(identity.user_id), {
-        method: "GET",
-      }).catch(function () { return null; });
-      const profile = buildAuthBackedProfile(identity, out && out.profile ? out.profile : null);
+      let profile = null;
+      const rows = await loadVisProfilesFromCloud().catch(function () { return []; });
+      if (Array.isArray(rows) && rows[0] && rows[0].profile) {
+        profile = rows[0].profile;
+      }
+      if (!profile) {
+        const out = await fetchSiteJson("/personal-intelligence/config?user_id=" + encodeURIComponent(identity.user_id), {
+          method: "GET",
+        }).catch(function () { return null; });
+        profile = buildAuthBackedProfile(identity, out && out.profile ? out.profile : null);
+      } else {
+        profile = await hydratePiUserConfig(profile);
+      }
       applyVisProfileToRuntime(profile);
       visRecognitionIndex = [{
         profileFile: String(profile.file_name || ""),
@@ -4759,6 +4875,11 @@
 
   function buildTutorSystemPrompt(mode, language, subject, facts) {
     const knownFactsLine = "Known user facts: " + (Object.keys(facts || {}).length ? JSON.stringify(facts) : "none");
+    const namingLine = [
+      "Naming policy:",
+      "use preferred_name or name for normal conversation,",
+      "use full_name or formal_name for formal requests, official writing, or respectful formal replies."
+    ].join(" ");
     const behaviorCfg = visBehaviorConfig && typeof visBehaviorConfig === "object" ? visBehaviorConfig : {};
     const personalization = visPersonalizationProfile && typeof visPersonalizationProfile === "object" ? visPersonalizationProfile : {};
     const corePersona =
@@ -4824,7 +4945,7 @@
 
     const emotionLine = "Detected user emotion: " + String(visLastEmotion || "neutral") + ". If emotion suggests stress/sadness/anger/fear, respond more calmly and empathetically.";
 
-    return [corePersona, principles, modeInstructions, styleRules, behaviorRules, personalizationRules, emotionLine, knownFactsLine].join("\n");
+    return [corePersona, principles, modeInstructions, styleRules, behaviorRules, personalizationRules, emotionLine, namingLine, knownFactsLine].join("\n");
   }
 
   async function fetchPuterVoices() {
