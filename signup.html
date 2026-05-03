@@ -1,1 +1,39 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Create account — Aevra AI</title><meta name="description" content="Create an Aevra AI account."><link rel="stylesheet" href="styles/main.css"><link rel="stylesheet" href="styles/mobile.css"></head><body><main class="auth-page"><form class="auth-card" action="app.html"><img src="assets/logo_aevra.svg" alt="Aevra AI"><h1>Create account</h1><p>Start learning with Aevra.</p><input name="name" type="text" placeholder="Full name" autocomplete="name" required><input name="email" type="email" placeholder="name@student.com" autocomplete="email" required><input name="password" type="password" placeholder="Create a password" required minlength="6"><button class="btn-primary" type="submit">Get started</button><p><a href="login.html">Already have an account?</a></p></form></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create Account | Aevra AI</title>
+  <meta name="description" content="Create an Aevra AI account.">
+  <link rel="canonical" href="https://aevrav1.netlify.app/signup.html">
+  <link rel="stylesheet" href="login.css?v=20260313glass1">
+</head>
+<body>
+  <main class="login-root">
+    <div class="background-layer" aria-hidden="true"></div>
+    <section class="login-card" aria-labelledby="signupTitle">
+      <header class="card-header">
+        <div class="logo" aria-hidden="true">A</div>
+        <h1 id="signupTitle">Join Aevra AI</h1>
+        <p class="muted">Create your glass workspace for study, voice, and progress.</p>
+      </header>
+      <form class="login-form" id="signupForm" autocomplete="on">
+        <input name="name" type="text" placeholder="Full name" autocomplete="name" required>
+        <input name="email" type="email" placeholder="name@student.com" autocomplete="email" required>
+        <input name="password" type="password" placeholder="Create a password" autocomplete="new-password" required minlength="6">
+        <input name="confirm" type="password" placeholder="Confirm password" autocomplete="new-password" required minlength="6">
+        <label class="remember"><input type="checkbox" name="terms" required> I agree to use Aevra AI responsibly.</label>
+        <button class="btn-primary" type="submit">Create account</button>
+      </form>
+      <div class="divider">or</div>
+      <button class="btn-social" type="button" data-provider="google">Continue with Google</button>
+      <p class="small">Already have an account? <a class="continue-aevra-link" href="login.html">Sign in</a></p>
+      <div class="toast" id="toast" hidden></div>
+    </section>
+  </main>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="firebase_runtime_config.js"></script>
+  <script src="signup.js?v=20260313glass1"></script>
+</body>
+</html>

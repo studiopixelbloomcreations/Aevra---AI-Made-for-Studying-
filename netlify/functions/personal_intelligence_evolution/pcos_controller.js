@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 const { CloudStateStore } = require("./cloud_state_store");
@@ -20,7 +21,7 @@ const { appendArchitectureRfc } = require("./agi/architecture_rfc_engine");
 const { getFederationState } = require("./agi/federation_interface");
 
 function isCloudOnly() {
-  const mode = String(process.env.PI_RUNTIME_MODE || "cloud_only").trim().toLowerCase();
+  const mode = String(env("PI_RUNTIME_MODE") || "cloud_only").trim().toLowerCase();
   return mode === "cloud_only";
 }
 
@@ -61,12 +62,12 @@ async function runPCOSCycle(envelope, context) {
   });
 
   const research = await ResearchEngine.run(envelope, {
-    timeout_ms: Number(process.env.PI_RESEARCH_FETCH_TIMEOUT_MS || 6000),
-    max_depth: Number(process.env.PI_RESEARCH_MAX_DEPTH || 2),
-    budget: Number(process.env.PI_RESEARCH_BUDGET || 6),
-    allowlist: String(process.env.PI_RESEARCH_ALLOWLIST || "").split(",").map((s) => s.trim()).filter(Boolean),
-    denylist: String(process.env.PI_RESEARCH_DENYLIST || "").split(",").map((s) => s.trim()).filter(Boolean),
-    trust_threshold: Number(process.env.PI_RESEARCH_TRUST_THRESHOLD || 0.25),
+    timeout_ms: Number(env("PI_RESEARCH_FETCH_TIMEOUT_MS") || 6000),
+    max_depth: Number(env("PI_RESEARCH_MAX_DEPTH") || 2),
+    budget: Number(env("PI_RESEARCH_BUDGET") || 6),
+    allowlist: String(env("PI_RESEARCH_ALLOWLIST") || "").split(",").map((s) => s.trim()).filter(Boolean),
+    denylist: String(env("PI_RESEARCH_DENYLIST") || "").split(",").map((s) => s.trim()).filter(Boolean),
+    trust_threshold: Number(env("PI_RESEARCH_TRUST_THRESHOLD") || 0.25),
   }, store);
 
   const governance = await GovernanceEngine.evaluate({
@@ -77,7 +78,7 @@ async function runPCOSCycle(envelope, context) {
     failed_agents: 0,
   }, store);
 
-  const agiEnabled = String(process.env.PI_ENABLE_AGI_EXTENSIONS || "true").trim().toLowerCase() === "true";
+  const agiEnabled = String(env("PI_ENABLE_AGI_EXTENSIONS") || "true").trim().toLowerCase() === "true";
   let agi = {};
   if (agiEnabled) {
     const hierarchy = runHierarchy(envelope);

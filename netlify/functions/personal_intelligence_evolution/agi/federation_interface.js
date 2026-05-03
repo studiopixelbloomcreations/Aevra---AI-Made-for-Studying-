@@ -1,7 +1,8 @@
+const { env } = require("../../../../core/env");
 "use strict";
 
 function getFederationState() {
-  const enabled = String(process.env.PI_FEDERATION_ENABLED || "false").trim().toLowerCase() === "true";
+  const enabled = String(env("PI_FEDERATION_ENABLED") || "false").trim().toLowerCase() === "true";
   return {
     enabled,
     mode: enabled ? "federation_active" : "disabled_by_default",

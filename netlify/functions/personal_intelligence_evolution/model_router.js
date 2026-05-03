@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 function sanitizeModelId(v) {
@@ -8,15 +9,15 @@ function sanitizeModelId(v) {
 }
 
 function getModelConfig() {
-  const strict = String(process.env.PI_STRICT_PUTER_ONLY || "true").trim().toLowerCase() === "true";
+  const strict = String(env("PI_STRICT_PUTER_ONLY") || "true").trim().toLowerCase() === "true";
   return {
     provider: "puter",
     strict_puter_only: strict,
-    main: sanitizeModelId(process.env.PI_MAIN_BRAIN_MODEL || "gemini-3-pro-preview") || "gemini-3-pro-preview",
-    main_fallback: sanitizeModelId(process.env.PI_MAIN_BRAIN_FALLBACK_MODEL || "gemini-3-pro-preview") || "gemini-3-pro-preview",
-    analysis: sanitizeModelId(process.env.PI_ANALYSIS_BRAIN_MODEL || "gemini-3-pro-preview") || "gemini-3-pro-preview",
-    proposal: sanitizeModelId(process.env.PI_PROPOSAL_BRAIN_MODEL || "gemini-3-pro-preview") || "gemini-3-pro-preview",
-    test: sanitizeModelId(process.env.PI_TEST_BRAIN_MODEL || "gemini-3-pro-preview") || "gemini-3-pro-preview",
+    main: sanitizeModelId(env("PI_MAIN_BRAIN_MODEL") || "gemini-3-pro-preview") || "gemini-3-pro-preview",
+    main_fallback: sanitizeModelId(env("PI_MAIN_BRAIN_FALLBACK_MODEL") || "gemini-3-pro-preview") || "gemini-3-pro-preview",
+    analysis: sanitizeModelId(env("PI_ANALYSIS_BRAIN_MODEL") || "gemini-3-pro-preview") || "gemini-3-pro-preview",
+    proposal: sanitizeModelId(env("PI_PROPOSAL_BRAIN_MODEL") || "gemini-3-pro-preview") || "gemini-3-pro-preview",
+    test: sanitizeModelId(env("PI_TEST_BRAIN_MODEL") || "gemini-3-pro-preview") || "gemini-3-pro-preview",
   };
 }
 

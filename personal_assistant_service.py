@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from typing import Dict, List, Optional, Any
 from urllib.parse import quote_plus
@@ -8,6 +7,7 @@ from urllib.parse import quote_plus
 import requests
 from groq import Groq
 
+from env_utils import env
 from user_personalization_router import store as personalization_store
 
 
@@ -69,8 +69,8 @@ def _ensure_integration_state(email_key: str) -> Dict[str, Any]:
 
 
 def _google_search_snippets(query: str, max_results: int = 3) -> List[Dict[str, str]]:
-    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY", "").strip()
-    cx = os.environ.get("GOOGLE_SEARCH_CX", "").strip()
+    api_key = str(env("GOOGLE_SEARCH_API_KEY", "")).strip()
+    cx = str(env("GOOGLE_SEARCH_CX", "")).strip()
     if not api_key or not cx:
         return []
 
@@ -106,7 +106,7 @@ def _google_search_snippets(query: str, max_results: int = 3) -> List[Dict[str, 
 
 def _detect_task_action(user_msg: str, integrations: Dict[str, Any], known_facts: Dict[str, str]) -> Optional[Dict[str, Any]]:
     text = (user_msg or "").strip().lower()
-    spotify_auth_url = os.environ.get("SPOTIFY_AUTH_URL", "").strip()
+    spotify_auth_url = str(env("SPOTIFY_AUTH_URL", "")).strip()
 
     if "connect spotify" in text or "link spotify" in text:
         return {
@@ -260,7 +260,7 @@ def ask_aevra_personal_agent(
     prompt_parts.append("User message:\n" + user_msg)
     user_prompt = "\n\n".join(prompt_parts)
 
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    client = Groq(api_key=env("GROQ_API_KEY"))
     # For strong command intents, use deterministic assistant response first.
     if action and action.get("message"):
         answer = str(action.get("message"))
@@ -330,15 +330,15 @@ def set_home_address(email: Optional[str], address: str) -> Dict[str, Any]:
 
 
 def create_openai_realtime_session(email: Optional[str]) -> Dict[str, Any]:
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_key = str(env("OPENAI_API_KEY", "")).strip()
     if not api_key:
         return {
             "ok": False,
             "error": "OPENAI_API_KEY is missing on backend environment",
         }
 
-    model = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime").strip() or "gpt-realtime"
-    voice = os.environ.get("OPENAI_REALTIME_VOICE", "alloy").strip() or "alloy"
+    model = str(env("OPENAI_REALTIME_MODEL", "gpt-realtime")).strip() or "gpt-realtime"
+    voice = str(env("OPENAI_REALTIME_VOICE", "alloy")).strip() or "alloy"
 
     email_key = _email_key(email)
     state = _ensure_integration_state(email_key)

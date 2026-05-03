@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const axios = require("axios");
 
 function json(statusCode, obj) {
@@ -17,7 +18,7 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const GROQ_API_KEY = env("GROQ_API_KEY");
   if (!GROQ_API_KEY) {
     return json(500, { title: "General Help", error: "Missing GROQ_API_KEY" });
   }

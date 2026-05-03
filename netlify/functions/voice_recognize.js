@@ -12,7 +12,7 @@ function cosine(a, b) {
   return ma && mb ? dot / (Math.sqrt(ma) * Math.sqrt(mb)) : 0;
 }
 async function forwardAudio(payload) {
-  const base = String(env("FASTAPI_BASE_URL", "") || env("BACKEND_URL", "")).replace(/\/$/, "");
+  const base = String(env("FASTAPI_BASE_URL", "")).replace(/\/$/, "");
   if (!base) throw new Error("FASTAPI_BASE_URL is not configured");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);

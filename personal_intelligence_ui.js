@@ -799,6 +799,9 @@
       const action = String(btn.getAttribute("data-vis-personalize") || "").trim().toLowerCase();
       if (action === "submit") {
         submitVisPersonalize();
+      } else if (action === "defer") {
+        closeVisPersonalize();
+        setAssistantStateForVisOffline("Personalization deferred");
       }
     });
   }
@@ -1101,6 +1104,7 @@
       '<form class="pi-vis-personalize-form" autocomplete="off">' +
         rows +
         '<div class="pi-vis-personalize-actions">' +
+          '<button type="button" class="pi-vis-btn pi-vis-btn-secondary" data-vis-personalize="defer">Later</button>' +
           '<button type="button" class="pi-vis-btn" data-vis-personalize="submit">Create Agent</button>' +
         "</div>" +
       "</form>";
@@ -1286,6 +1290,10 @@
   function ensureVisPersonalAgent(profile, reason) {
     if (!profile) return;
     if (hasVisPersonalAgent(profile)) return;
+    if (String(reason || "") === "auth_bootstrap") {
+      pushVisDebug("Personalization available after auth bootstrap; keeping chat available.");
+      return;
+    }
     if (hasRecentPersonalizationCompletion(profile)) {
       pushVisDebug("Skipping personalization reopen after recent completion (" + String(reason || "recent_completion") + ").");
       return;
@@ -6357,7 +6365,7 @@
     });
   }
   setUIMode("voice");
-  setEnabled(true);
+  setEnabled(false);
   initVisualIntelligenceSystem().catch(function (e) {
     dbg("VIS init failed", e && e.message);
     setAssistantStateForVisOffline("Offline - VIS init failed");

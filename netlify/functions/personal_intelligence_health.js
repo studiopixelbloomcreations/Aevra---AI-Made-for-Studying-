@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const { computeReadiness } = require("./personal_intelligence_evolution/production_readiness");
 const { CloudStateStore } = require("./personal_intelligence_evolution/cloud_state_store");
 const { enforceRateLimit } = require("./personal_intelligence_evolution/security_ops");
@@ -19,7 +20,7 @@ function json(statusCode, obj) {
 exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
-  const rl = enforceRateLimit(event, "health", Number(process.env.PI_HEALTH_RATE_LIMIT_PER_MIN || 120), 60000);
+  const rl = enforceRateLimit(event, "health", Number(env("PI_HEALTH_RATE_LIMIT_PER_MIN") || 120), 60000);
   if (!rl.allowed) return json(429, { error: "Rate limit exceeded", rate_limit: rl });
 
   const readiness = computeReadiness();

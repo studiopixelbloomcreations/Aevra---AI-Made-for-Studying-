@@ -1,3 +1,4 @@
+const { env } = require("../../../../core/env");
 "use strict";
 
 const { runDeepResearch } = require("../deep_research_engine");
@@ -5,7 +6,7 @@ const { runDeepResearch } = require("../deep_research_engine");
 function normalizePolicy(policy) {
   const p = policy && typeof policy === "object" ? policy : {};
   return {
-    timeout_ms: Math.max(1000, Number(p.timeout_ms || process.env.PI_RESEARCH_FETCH_TIMEOUT_MS || 6000)),
+    timeout_ms: Math.max(1000, Number(p.timeout_ms || env("PI_RESEARCH_FETCH_TIMEOUT_MS") || 6000)),
     max_depth: Math.max(1, Math.min(5, Number(p.max_depth || 2))),
     budget: Math.max(1, Math.min(20, Number(p.budget || 6))),
     allowlist: Array.isArray(p.allowlist) ? p.allowlist.map((s) => String(s).toLowerCase()) : [],

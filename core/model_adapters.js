@@ -13,7 +13,7 @@ function providerConfig() {
       baseUrl: env("PI_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
       model: env("PI_OPENROUTER_MODEL", "openai/gpt-4o-mini"),
       headers: {
-        "HTTP-Referer": env("PI_OPENROUTER_REFERER", "https://aevra-ai.netlify.app"),
+        "HTTP-Referer": env("PI_OPENROUTER_REFERER", "https://aevrav1.netlify.app"),
         "X-Title": env("PI_OPENROUTER_TITLE", "Personal Intelligence"),
       },
     },
@@ -24,7 +24,7 @@ function providerConfig() {
       headers: {},
     },
     grok: {
-      apiKey: getModelApiKey("grok") || env("GROK_API_KEY") || env("XAI_API_KEY"),
+      apiKey: getModelApiKey("grok"),
       baseUrl: env("PI_GROK_BASE_URL", "https://api.x.ai/v1"),
       model: env("PI_GROK_MODEL", "grok-3-mini"),
       headers: {},
@@ -36,8 +36,8 @@ function providerConfig() {
       headers: {},
     },
     huggingface: {
-      apiKey: getModelApiKey("huggingface") || env("HUGGINGFACE_API_KEY") || env("HF_API_KEY"),
-      baseUrl: env("PI_HUGGINGFACE_BASE_URL", "https://router.huggingface.co/v1"),
+      apiKey: getModelApiKey("huggingface") || env("HUGGINGFACE_API_KEY"),
+      baseUrl: env("PI_HUGGINGFACE_BASE_URL", "https://api-inference.huggingface.co/models"),
       model: env("PI_HUGGINGFACE_MODEL", "meta-llama/Llama-3.1-8B-Instruct"),
       headers: {},
     },
@@ -71,6 +71,7 @@ async function postChatCompletion(config, context) {
   if (!config || !config.apiKey || !config.baseUrl || !config.model) {
     return { answer: "", error: "provider_not_configured" };
   }
+  if (config.provider === "huggingface") return postHuggingFaceInference(config, context);
   const url = `${config.baseUrl.replace(/\/$/, "")}/chat/completions`;
   const headers = Object.assign({
     "Content-Type": "application/json",
@@ -103,13 +104,46 @@ async function postChatCompletion(config, context) {
 function buildHarmonyAdapters() {
   const configs = providerConfig();
   return {
-    openrouter: async (context) => postChatCompletion(configs.openrouter, context),
-    groq: async (context) => postChatCompletion(configs.groq, context),
-    grok: async (context) => postChatCompletion(configs.grok, context),
-    mistral: async (context) => postChatCompletion(configs.mistral, context),
-    huggingface: async (context) => postChatCompletion(configs.huggingface, context),
-    deepseek: async (context) => postChatCompletion(configs.deepseek, context),
+    openrouter: async (context) => postChatCompletion(Object.assign({ provider: "openrouter" }, configs.openrouter), context),
+    groq: async (context) => postChatCompletion(Object.assign({ provider: "groq" }, configs.groq), context),
+    grok: async (context) => postChatCompletion(Object.assign({ provider: "grok" }, configs.grok), context),
+    mistral: async (context) => postChatCompletion(Object.assign({ provider: "mistral" }, configs.mistral), context),
+    huggingface: async (context) => postChatCompletion(Object.assign({ provider: "huggingface" }, configs.huggingface), context),
+    deepseek: async (context) => postChatCompletion(Object.assign({ provider: "deepseek" }, configs.deepseek), context),
   };
+}
+
+async function postHuggingFaceInference(config, context) {
+  if (!config || !config.apiKey || !config.baseUrl || !config.model) {
+    return { answer: "", error: "provider_not_configured" };
+  }
+  const prompt = buildMessages(context).map((message) => `${message.role}: ${message.content}`).join("\n\n");
+  const url = `${config.baseUrl.replace(/\/$/, "")}/${encodeURIComponent(config.model)}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      inputs: prompt,
+      parameters: {
+        temperature: Number(env("PI_MODEL_TEMPERATURE", "0.4")),
+        max_new_tokens: Number(env("PI_HUGGINGFACE_MAX_NEW_TOKENS", "700")),
+      },
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return {
+      answer: "",
+      error: String((data && (data.error && data.error.message || data.error || data.message)) || `http_${response.status}`),
+    };
+  }
+  const first = Array.isArray(data) ? data[0] : data;
+  const generated = String((first && (first.generated_text || first.summary_text || first.text)) || "").trim();
+  const answer = generated.startsWith(prompt) ? generated.slice(prompt.length).trim() : generated;
+  return { answer, raw: data, error: answer ? "" : "empty_answer" };
 }
 
 module.exports = {

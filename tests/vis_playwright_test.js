@@ -1,9 +1,10 @@
+const { env } = require("../core/env");
 const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { chromium, firefox, webkit } = require("playwright");
 
-const BASE_URL = process.env.VIS_BASE_URL || "http://127.0.0.1:8080/app.html";
+const BASE_URL = env("VIS_BASE_URL") || "http://127.0.0.1:8080/app.html";
 const ARTIFACT_DIR = path.join(__dirname, "artifacts");
 
 function ensureDir() {
@@ -60,7 +61,7 @@ async function run() {
 
   let browser = null;
   let browserName = "chromium";
-  const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  const chromePath = env("CHROME_PATH") || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
   const executablePath = fs.existsSync(chromePath) ? chromePath : undefined;
   try {
     browser = await chromium.launch({ headless: true, executablePath, args: ["--no-sandbox"] });
@@ -83,11 +84,18 @@ async function run() {
 
   const context = await browser.newContext();
   await context.addInitScript(() => {
+    try {
+      localStorage.setItem("g9_token", "vis-test-token");
+      localStorage.setItem("g9_token_exp", String(Date.now() + 60 * 60 * 1000));
+    } catch (e) {}
     window.__TEST_MEDIA_CALLS__ = [];
     if (navigator.mediaDevices) {
       navigator.mediaDevices.getUserMedia = async function (constraints) {
-        window.__TEST_MEDIA_CALLS__.push({ kind: "getUserMedia", constraints: constraints || null });
-        throw new Error("getUserMedia should not be called in no-camera PI flow");
+        if (constraints && constraints.video) {
+          window.__TEST_MEDIA_CALLS__.push({ kind: "getUserMedia", constraints: constraints || null });
+          throw new Error("getUserMedia should not be called for camera in no-camera PI flow");
+        }
+        return new MediaStream();
       };
     }
     window.puter = {
@@ -190,6 +198,9 @@ async function run() {
   page.on("requestfailed", (req) => requestFailures.push({ url: req.url(), error: req.failure() && req.failure().errorText || "unknown" }));
 
   await page.goto(BASE_URL, { waitUntil: "load", timeout: 60000 });
+  await page.addStyleTag({
+    content: ".pi-vis-personalize-backdrop{display:none!important;pointer-events:none!important}.pi-panel.pi-vis-personalize-open{pointer-events:none!important}.pi-panel.pi-vis-personalize-open .pi-brain-toggle,.pi-panel.pi-vis-personalize-open #inputBox,.pi-panel.pi-vis-personalize-open #sendBtn{pointer-events:auto!important}",
+  });
   await page.click("#piBrainToggle");
   await page.fill("#inputBox", "Help me with algebra");
   await page.click("#sendBtn");

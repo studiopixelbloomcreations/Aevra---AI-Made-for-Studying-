@@ -12,7 +12,7 @@ function parseModelApiKeys(raw) {
 }
 
 function getModelApiRegistry() {
-  return parseModelApiKeys(env("PI_MODEL_API_KEYS_JSON") || env("MODEL_API_KEYS_JSON") || "");
+  return parseModelApiKeys(env("PI_MODEL_API_KEYS_JSON") || "");
 }
 
 function getModelApiKey(provider) {

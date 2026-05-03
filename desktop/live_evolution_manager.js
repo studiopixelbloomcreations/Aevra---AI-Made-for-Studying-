@@ -1,3 +1,4 @@
+const { env } = require("../core/env");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -396,7 +397,7 @@ class LiveEvolutionManager {
     const factEvolutionMode = !!req.fact_evolution;
     const factSchemaMode = !!req.fact_schema;
     const puterCode = stripCodeFences(req.puter_generated_code);
-    const modelUsed = String(req.puter_model || process.env.PI_LIVE_MODEL || "gemini-3-pro-preview").trim();
+    const modelUsed = String(req.puter_model || env("PI_LIVE_MODEL") || "gemini-3-pro-preview").trim();
     let proposedContent = "";
     if (factEvolutionMode) {
       const factOut = buildFactEvolutionJson(current, {

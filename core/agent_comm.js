@@ -7,7 +7,7 @@ function env(name, fallback = "") {
 function getConfig() {
   return {
     supabaseUrl: env("SUPABASE_URL").replace(/\/$/, ""),
-    apiKey: env("SUPABASE_SERVICE_ROLE_KEY") || env("SUPABASE_SERVICE_ROLE") || env("SUPABASE_ANON_KEY"),
+    apiKey: env("SUPABASE_SERVICE_KEY") || env("SUPABASE_ANON_KEY"),
     table: env("SUPABASE_PI_PROFILE_TABLE", "user_profiles"),
   };
 }

@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 function json(statusCode, obj) {
   return {
     statusCode,
@@ -15,13 +16,13 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
+  const apiKey = (env("OPENAI_API_KEY") || "").trim();
   if (!apiKey) {
     return json(200, { ok: false, error: "OPENAI_API_KEY is missing on Netlify environment" });
   }
 
-  const model = (process.env.OPENAI_REALTIME_MODEL || "gpt-realtime").trim();
-  const voice = (process.env.OPENAI_REALTIME_VOICE || "alloy").trim();
+  const model = (env("OPENAI_REALTIME_MODEL") || "gpt-realtime").trim();
+  const voice = (env("OPENAI_REALTIME_VOICE") || "alloy").trim();
 
   const payload = {
     model,

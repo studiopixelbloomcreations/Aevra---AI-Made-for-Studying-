@@ -1,4 +1,4 @@
-const STATIC_CACHE = "aevra-static-v2";
+const STATIC_CACHE = "aevra-static-glass-v1";
 const API_CACHE = "aevra-api-v1";
 const STATIC_ASSETS = [
   "./",
@@ -6,22 +6,25 @@ const STATIC_ASSETS = [
   "app.html",
   "login.html",
   "signup.html",
-  "styles/main.css",
-  "styles/chat.css",
-  "styles/sidebar.css",
-  "styles/mobile.css",
-  "styles/animations.css",
-  "js/app_controller.js",
-  "js/ui_chat.js",
-  "js/ui_sidebar.js",
-  "js/ui_voice.js",
-  "js/ui_exam.js",
-  "js/ui_gamification.js",
-  "js/ui_settings.js",
-  "js/theme.js",
-  "core/logger.js",
-  "core/state_manager.js",
-  "assets/logo_aevra.svg",
+  "styles.css",
+  "login.css",
+  "landing.css",
+  "api.js",
+  "auth.js",
+  "chat.js",
+  "script.js",
+  "voice_multimodal_ui.js",
+  "personal_intelligence_ui.js",
+  "public/vais/session_manager.js",
+  "public/vais/audio_engine.js",
+  "public/vais/voice_embedding_engine.js",
+  "public/vais/voice_match_engine.js",
+  "public/vais/confidence_engine.js",
+  "public/vais/onboarding_engine.js",
+  "public/vais/wakeword_engine.js",
+  "public/vais/identity_engine.js",
+  "public/vais/ai_router.js",
+  "public/vais/vais_controller.js",
 ];
 
 self.addEventListener("install", (event) => {

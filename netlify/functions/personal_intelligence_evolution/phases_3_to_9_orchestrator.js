@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 const { CloudStateStore } = require("./cloud_state_store");
@@ -20,16 +21,16 @@ async function runPhases3To9(envelope, memorySnapshot, phase2Status) {
     store,
     queue,
     async (q, opts) => runSwarmWorkerTick(q, { graph_summary: phase2Status && phase2Status.graph }, opts),
-    { worker_count: Number(process.env.PI_SWARM_WORKER_COUNT || 3) }
+    { worker_count: Number(env("PI_SWARM_WORKER_COUNT") || 3) }
   );
 
   const phase4 = await ResearchEngine.run(envelope, {
-    timeout_ms: Number(process.env.PI_RESEARCH_FETCH_TIMEOUT_MS || 6000),
-    max_depth: Number(process.env.PI_RESEARCH_MAX_DEPTH || 2),
-    budget: Number(process.env.PI_RESEARCH_BUDGET || 6),
-    allowlist: String(process.env.PI_RESEARCH_ALLOWLIST || "").split(",").map((s) => s.trim()).filter(Boolean),
-    denylist: String(process.env.PI_RESEARCH_DENYLIST || "").split(",").map((s) => s.trim()).filter(Boolean),
-    trust_threshold: Number(process.env.PI_RESEARCH_TRUST_THRESHOLD || 0.25),
+    timeout_ms: Number(env("PI_RESEARCH_FETCH_TIMEOUT_MS") || 6000),
+    max_depth: Number(env("PI_RESEARCH_MAX_DEPTH") || 2),
+    budget: Number(env("PI_RESEARCH_BUDGET") || 6),
+    allowlist: String(env("PI_RESEARCH_ALLOWLIST") || "").split(",").map((s) => s.trim()).filter(Boolean),
+    denylist: String(env("PI_RESEARCH_DENYLIST") || "").split(",").map((s) => s.trim()).filter(Boolean),
+    trust_threshold: Number(env("PI_RESEARCH_TRUST_THRESHOLD") || 0.25),
   }, store);
   const phase5Graph = await updateMultiLayerGraph(store, envelope, memorySnapshot);
   const phase5Strategy = await runStrategicPlanner(store, envelope);

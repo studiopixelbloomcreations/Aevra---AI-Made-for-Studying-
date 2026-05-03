@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 function nowIso() {
@@ -20,9 +21,9 @@ function defaultSwarmState() {
 }
 
 async function runRemoteWorker(workerId, options) {
-  const fanoutUrl = String(process.env.PI_SWARM_FANOUT_URL || "").trim();
+  const fanoutUrl = String(env("PI_SWARM_FANOUT_URL") || "").trim();
   if (!fanoutUrl) return null;
-  const adminToken = String(process.env.PI_ADMIN_TOKEN || "").trim();
+  const adminToken = String(env("PI_ADMIN_TOKEN") || "").trim();
   const res = await fetch(fanoutUrl, {
     method: "POST",
     headers: {
@@ -62,7 +63,7 @@ async function runDistributedSwarm(store, queue, workerRunner, options) {
   for (const wid of workerIds) {
     const params = {
       max_tasks: 1,
-      backoff_base_ms: Number(process.env.PI_SWARM_BACKOFF_BASE_MS || 4000),
+      backoff_base_ms: Number(env("PI_SWARM_BACKOFF_BASE_MS") || 4000),
       worker_id: wid,
       lease_seconds: leaseSeconds,
     };

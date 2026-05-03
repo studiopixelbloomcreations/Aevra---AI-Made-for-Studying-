@@ -1,1 +1,40 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in — Aevra AI</title><meta name="description" content="Sign in to Aevra AI."><link rel="stylesheet" href="styles/main.css"><link rel="stylesheet" href="styles/mobile.css"></head><body><main class="auth-page"><form class="auth-card" action="app.html"><img src="assets/logo_aevra.svg" alt="Aevra AI"><h1>Sign in</h1><p>Continue your study session.</p><input name="email" type="email" placeholder="name@student.com" autocomplete="email" required><input name="password" type="password" placeholder="Password" autocomplete="current-password" required minlength="6"><button class="btn-primary" type="submit">Sign in</button><p><a href="signup.html">Create account</a> · <a href="index.html">Back</a></p></form></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | Aevra AI</title>
+  <meta name="description" content="Sign in to Aevra AI.">
+  <link rel="canonical" href="https://aevrav1.netlify.app/login.html">
+  <link rel="stylesheet" href="login.css?v=20260313glass1">
+</head>
+<body>
+  <main class="login-root">
+    <div class="background-layer" aria-hidden="true"></div>
+    <section class="login-card" aria-labelledby="loginTitle">
+      <header class="card-header">
+        <div class="logo" aria-hidden="true">A</div>
+        <h1 id="loginTitle">Aevra AI</h1>
+        <p class="muted">Welcome back. Continue your study session.</p>
+      </header>
+      <form class="login-form" id="loginForm" autocomplete="on">
+        <input name="email" type="email" placeholder="name@student.com" autocomplete="email" required>
+        <input name="password" type="password" placeholder="Password" autocomplete="current-password" required minlength="6">
+        <div class="row between">
+          <label class="remember"><input type="checkbox" name="remember" checked> Keep me signed in</label>
+          <a class="link" id="continueAevraLink" href="app.html">Open Aevra</a>
+        </div>
+        <button class="btn-primary" type="submit">Sign in</button>
+      </form>
+      <div class="divider">or</div>
+      <button class="btn-social" type="button" data-provider="google">Continue with Google</button>
+      <p class="small">New here? <a class="continue-aevra-link" href="signup.html">Create an account</a></p>
+      <div class="toast" id="toast" hidden></div>
+    </section>
+  </main>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="firebase_runtime_config.js"></script>
+  <script src="login.js?v=20260313glass1"></script>
+</body>
+</html>

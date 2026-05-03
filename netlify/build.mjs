@@ -52,11 +52,7 @@ const rootFilesToCopy = [
 
 const rootDirsToCopy = [
   "ExamModeToggle",
-  "assets",
-  "js",
-  "new_ui",
   "public",
-  "styles",
   "ui",
 ];
 

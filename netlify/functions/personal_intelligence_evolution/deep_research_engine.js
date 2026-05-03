@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 function nowIso() {
@@ -40,11 +41,11 @@ async function fetchWithTimeout(url, timeoutMs) {
 }
 
 async function getLiveSourceCatalog() {
-  const feeds = String(process.env.PI_RESEARCH_SOURCE_FEEDS || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 6);
+  const feeds = String(env("PI_RESEARCH_SOURCE_FEEDS") || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 6);
   if (!feeds.length) return [];
   const merged = [];
   for (const url of feeds) {
-    const data = await fetchWithTimeout(url, Number(process.env.PI_RESEARCH_FETCH_TIMEOUT_MS || 6000));
+    const data = await fetchWithTimeout(url, Number(env("PI_RESEARCH_FETCH_TIMEOUT_MS") || 6000));
     const rows = Array.isArray(data) ? data : (data && Array.isArray(data.sources) ? data.sources : []);
     rows.forEach((r, idx) => {
       const title = String(r && r.title || "").trim();

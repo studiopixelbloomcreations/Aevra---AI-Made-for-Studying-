@@ -4,9 +4,11 @@
   const MODELS = [
     "groq:llama-3.1-70b-versatile",
     "groq:mixtral-8x7b-32768",
-    "openrouter:claude-3-haiku",
-    "puter:claude-3-5-sonnet",
+    "openrouter:openai/gpt-4o-mini",
+    "mistral:mistral-small-latest",
+    "huggingface:meta-llama/Llama-3.1-8B-Instruct",
     "deepseek:deepseek-chat",
+    "puter:claude-3-5-sonnet",
   ];
   const status = MODELS.map((model) => ({ model, status: "ok" }));
 

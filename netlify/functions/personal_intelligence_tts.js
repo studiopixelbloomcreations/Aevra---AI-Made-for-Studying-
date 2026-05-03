@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 function audio(statusCode, bodyBuffer, contentType) {
   return {
     statusCode,
@@ -62,11 +63,11 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
-  const baseUrl = String(process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com").trim();
-  const model = String(process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts").trim();
-  const defaultVoice = String(process.env.GEMINI_TTS_VOICE || "Kore").trim();
-  const defaultSampleRate = Number(process.env.GEMINI_TTS_SAMPLE_RATE || 24000);
+  const apiKey = String(env("GEMINI_API_KEY") || "").trim();
+  const baseUrl = String(env("GEMINI_API_BASE") || "https://generativelanguage.googleapis.com").trim();
+  const model = String(env("GEMINI_TTS_MODEL") || "gemini-2.5-flash-preview-tts").trim();
+  const defaultVoice = String(env("GEMINI_TTS_VOICE") || "Kore").trim();
+  const defaultSampleRate = Number(env("GEMINI_TTS_SAMPLE_RATE") || 24000);
   if (!apiKey) {
     return json(500, { ok: false, error: "GEMINI_API_KEY missing in Netlify environment" });
   }

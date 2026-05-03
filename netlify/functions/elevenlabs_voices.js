@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const axios = require("axios");
 
 function json(statusCode, obj) {
@@ -18,7 +19,7 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "GET") return json(405, { ok: false, error: "Method not allowed" });
 
-  const apiKey = String(process.env.ELEVENLABS_API_KEY || "").trim();
+  const apiKey = String(env("ELEVENLABS_API_KEY") || "").trim();
   if (!apiKey) {
     return json(500, { ok: false, error: "Missing ELEVENLABS_API_KEY in Netlify environment variables" });
   }

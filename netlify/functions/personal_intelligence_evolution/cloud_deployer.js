@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 function makeId(prefix) {
@@ -14,10 +15,10 @@ function sanitizeSegment(v) {
 }
 
 function buildFactsFilePath() {
-  return String(process.env.PI_FACT_EVOLUTION_PATH || "netlify/functions/personal_intelligence_evolution/Fact Evolution.json").trim();
+  return String(env("PI_FACT_EVOLUTION_PATH") || "netlify/functions/personal_intelligence_evolution/Fact Evolution.json").trim();
 }
 function buildSchemaFilePath() {
-  return String(process.env.PI_FACT_SCHEMA_PATH || "netlify/functions/personal_intelligence_evolution/Fact Schema.json").trim();
+  return String(env("PI_FACT_SCHEMA_PATH") || "netlify/functions/personal_intelligence_evolution/Fact Schema.json").trim();
 }
 
 function safeJsonParse(text, fallback) {
@@ -327,10 +328,10 @@ async function autoEvolveToGitHub(input) {
   stages.push({ stage: "generate", ok: true, model_used: String(payload.puter_model || "gemini-3-pro-preview"), error: "" });
   stages.push({ stage: "inspect", ok: true, inspect });
 
-  const token = String(process.env.GITHUB_TOKEN || "").trim();
-  const owner = String(process.env.GITHUB_REPO_OWNER || "").trim();
-  const repo = String(process.env.GITHUB_REPO_NAME || "").trim();
-  const branch = String(process.env.GITHUB_REPO_BRANCH || "main").trim();
+  const token = String(env("GITHUB_TOKEN") || "").trim();
+  const owner = String(env("GITHUB_REPO_OWNER") || "").trim();
+  const repo = String(env("GITHUB_REPO_NAME") || "").trim();
+  const branch = String(env("GITHUB_REPO_BRANCH") || "main").trim();
 
   const current = await githubGetFile({ token, owner, repo, branch, filePath });
   if (!current.ok) {

@@ -1,7 +1,9 @@
 import os
 import uuid
 
-TEMP_DIR = os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp"
+from env_utils import env
+
+TEMP_DIR = env("TMPDIR") or env("TEMP") or "/tmp"
 TEMP_DIR = os.path.join(TEMP_DIR, "tmp_media")
 
 

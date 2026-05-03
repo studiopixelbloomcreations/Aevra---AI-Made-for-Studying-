@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const axios = require('axios');
 
 function response(statusCode, headers, body, isBase64Encoded) {
@@ -31,7 +32,7 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(200, { ok: true });
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
 
-  const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+  const ELEVENLABS_API_KEY = env("ELEVENLABS_API_KEY");
   if (!ELEVENLABS_API_KEY) {
     return json(500, { error: 'Missing ELEVENLABS_API_KEY in Netlify environment variables' });
   }
@@ -52,8 +53,8 @@ exports.handler = async function handler(event) {
   const stability = typeof payload.stability === 'number' ? payload.stability : 0.5;
   const similarity_boost = typeof payload.similarity_boost === 'number' ? payload.similarity_boost : 0.75;
   const modelFromBody = payload && payload.modelId ? String(payload.modelId).trim() : '';
-  const modelFromEnv = String(process.env.ELEVENLABS_MODEL || '').trim();
-  const outputFormat = String(process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128').trim();
+  const modelFromEnv = String(env("ELEVENLABS_MODEL") || '').trim();
+  const outputFormat = String(env("ELEVENLABS_OUTPUT_FORMAT") || 'mp3_44100_128').trim();
   const normalizedText = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 3800);
   const modelsToTry = [];
   if (modelFromBody) modelsToTry.push(modelFromBody);

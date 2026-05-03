@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const { CloudStateStore } = require("./personal_intelligence_evolution/cloud_state_store");
 const { requireAdmin, enforceRateLimit } = require("./personal_intelligence_evolution/security_ops");
 
@@ -23,7 +24,7 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
 
-  const rl = enforceRateLimit(event, "dashboard", Number(process.env.PI_DASH_RATE_LIMIT_PER_MIN || 120), 60000);
+  const rl = enforceRateLimit(event, "dashboard", Number(env("PI_DASH_RATE_LIMIT_PER_MIN") || 120), 60000);
   if (!rl.allowed) return json(429, { error: "Rate limit exceeded", rate_limit: rl });
 
   const auth = requireAdmin(event);

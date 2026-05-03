@@ -1,3 +1,4 @@
+const { env } = require("../../core/env");
 const { CloudStateStore } = require("./personal_intelligence_evolution/cloud_state_store");
 const { SwarmTaskQueue } = require("./personal_intelligence_evolution/swarm_task_queue");
 const { runSwarmWorkerTick } = require("./personal_intelligence_evolution/cloud_swarm_worker");
@@ -20,7 +21,7 @@ exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
 
-  const rl = enforceRateLimit(event, "worker_tick", Number(process.env.PI_WORKER_RATE_LIMIT_PER_MIN || 240), 60000);
+  const rl = enforceRateLimit(event, "worker_tick", Number(env("PI_WORKER_RATE_LIMIT_PER_MIN") || 240), 60000);
   if (!rl.allowed) return json(429, { error: "Rate limit exceeded", rate_limit: rl });
 
   const auth = requireAdmin(event);

@@ -1,4 +1,5 @@
 const { env, allowedOrigin } = require("../../core/env");
+const { buildHarmonyAdapters } = require("../../core/model_adapters");
 const logger = require("../../core/logger");
 
 function json(statusCode, obj) {
@@ -15,6 +16,24 @@ async function callGroq(model, messages, systemPrompt) {
   if (!res.ok) throw new Error(data.error && data.error.message || `Groq HTTP ${res.status}`);
   return data.choices[0].message.content;
 }
+async function callConfiguredProvider(model, messages, systemPrompt) {
+  const [provider, modelId] = String(model || "").split(":");
+  if (provider === "groq") return callGroq(modelId || "llama-3.1-8b-instant", messages, systemPrompt);
+  if (provider === "puter") {
+    throw new Error(env("PUTER_API_KEY") ? "puter_server_key_not_supported" : "puter_client_fallback_required");
+  }
+  const adapters = buildHarmonyAdapters();
+  const adapter = adapters[provider];
+  if (!adapter) throw new Error(`Provider ${provider || "unknown"} is not configured`);
+  const result = await adapter({
+    query: (messages || []).map((message) => message.content).filter(Boolean).join("\n\n"),
+    council_prompt: `${systemPrompt}\n\n${(messages || []).map((message) => `${message.role}: ${message.content}`).join("\n")}`,
+    analysis: { type: "harmony", complexity: "medium", requires_multi_models: true },
+    requested_model: modelId || "",
+  });
+  if (result && result.answer) return result.answer;
+  throw new Error(result && result.error || `${provider}_empty_response`);
+}
 exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
@@ -24,8 +43,7 @@ exports.handler = async function handler(event) {
     const messages = Array.isArray(payload.messages) ? payload.messages : [];
     const systemPrompt = String(payload.systemPrompt || "You are Aevra, a warm and intelligent AI study companion designed for students.");
     if (!messages.length) return json(422, { error: "messages are required" });
-    if (model.startsWith("groq:")) return json(200, { success: true, data: { response: await callGroq(model.split(":")[1], messages, systemPrompt), model }, error: null });
-    return json(502, { error: "Requested model provider is not configured on this deployment." });
+    return json(200, { success: true, data: { response: await callConfiguredProvider(model, messages, systemPrompt), model }, error: null });
   } catch (error) {
     logger.error("harmony_ask", { error: String(error && error.stack || error) });
     return json(500, { success: false, data: null, error: "Aevra Harmony is unavailable right now." });

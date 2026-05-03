@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import io
-import os
 import re
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+from env_utils import env
 
 USER_AGENT = "AevraAI-ExamMode/2.0"
 REQUEST_TIMEOUT = 30
@@ -353,7 +354,7 @@ def scrape_papers_dynamic(subject: str, term: str) -> Dict[int, List[dict]]:
             continue
         used.add(u)
         pdf_urls.append(u)
-        if len(pdf_urls) >= int(os.environ.get("EXAM_MAX_PDFS", MAX_PDFS)):
+        if len(pdf_urls) >= int(env("EXAM_MAX_PDFS", MAX_PDFS)):
             break
 
     if not pdf_urls:

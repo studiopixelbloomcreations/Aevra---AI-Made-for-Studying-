@@ -1,14 +1,9 @@
 const functions = require('firebase-functions/v1');
-const {defineSecret} = require('firebase-functions/params');
 const axios = require('axios');
+const { env } = require('../core/env');
 
 // CORS middleware
 const cors = require('cors')({origin: true});
-
-// Secrets (set in Firebase Secret Manager via CLI)
-const GROQ_API_KEY = defineSecret('GROQ_API_KEY');
-const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
-const ELEVENLABS_API_KEY = defineSecret('ELEVENLABS_API_KEY');
 
 // Health check endpoint
 exports.health = functions.https.onRequest((req, res) => {
@@ -18,7 +13,7 @@ exports.health = functions.https.onRequest((req, res) => {
 });
 
 // Main AI chat endpoint
-exports.ask = functions.runWith({secrets: [GROQ_API_KEY, GEMINI_API_KEY, ELEVENLABS_API_KEY]}).https.onRequest(async (req, res) => {
+exports.ask = functions.https.onRequest(async (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -43,7 +38,7 @@ exports.ask = functions.runWith({secrets: [GROQ_API_KEY, GEMINI_API_KEY, ELEVENL
         temperature: 0.45
       }, {
         headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY.value()}`,
+          'Authorization': `Bearer ${env('GROQ_API_KEY')}`,
           'Content-Type': 'application/json'
         }
       });
@@ -59,7 +54,7 @@ exports.ask = functions.runWith({secrets: [GROQ_API_KEY, GEMINI_API_KEY, ELEVENL
 });
 
 // Title generation endpoint
-exports.generate_title = functions.runWith({secrets: [GROQ_API_KEY, GEMINI_API_KEY, ELEVENLABS_API_KEY]}).https.onRequest(async (req, res) => {
+exports.generate_title = functions.https.onRequest(async (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -77,7 +72,7 @@ exports.generate_title = functions.runWith({secrets: [GROQ_API_KEY, GEMINI_API_K
         temperature: 0.5
       }, {
         headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY.value()}`,
+          'Authorization': `Bearer ${env('GROQ_API_KEY')}`,
           'Content-Type': 'application/json'
         }
       });

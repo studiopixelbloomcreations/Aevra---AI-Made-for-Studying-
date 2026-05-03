@@ -1,10 +1,11 @@
 import json
 import random
 import re
-import os
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+from env_utils import env
 
 # Helper utilities for Exam Mode. Local Grade 9 question-bank content is the
 # primary source so Exam Mode remains useful even when public paper sites block
@@ -85,7 +86,7 @@ def scrape_papers(subject: str, term: str) -> Dict[int, List[Dict]]:
             ]
         }
 
-    if os.environ.get("EXAM_LIVE_FETCH", "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if str(env("EXAM_LIVE_FETCH", "")).strip().lower() not in {"1", "true", "yes", "on"}:
         raise RuntimeError("No local question bank entries are available for this subject")
 
     time.sleep(1.0)
@@ -98,7 +99,7 @@ def scrape_papers(subject: str, term: str) -> Dict[int, List[Dict]]:
         cache_key = None
         scrape_papers_dynamic = None  # type: ignore
 
-    allow_fallback = os.environ.get("EXAM_ALLOW_SYNTHETIC_FALLBACK", "").strip().lower() in {
+    allow_fallback = str(env("EXAM_ALLOW_SYNTHETIC_FALLBACK", "")).strip().lower() in {
         "1", "true", "yes", "on"
     }
 

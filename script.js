@@ -1358,7 +1358,7 @@
       await ensurePuterReady(true);
       const mainModel = getMainModel();
       const systemPrompt =
-        'You are Aevra AI, a helpful study aevra for Grade 9 students. ' +
+        'You are Aevra AI, a helpful study companion for Grade 9 students. ' +
         'Keep answers accurate, clear, and practical. ' +
         'Current subject: ' + state.subject + '. ' +
         'Respond in ' + state.language + '.';

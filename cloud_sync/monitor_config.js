@@ -1,3 +1,4 @@
+const { env } = require("../core/env");
 const path = require("path");
 
 function toMs(value, fallback) {
@@ -7,7 +8,7 @@ function toMs(value, fallback) {
 }
 
 function resolveRepoRoot() {
-  const envRoot = String(process.env.AEVRA_REPO_ROOT || "").trim();
+  const envRoot = String(env("AEVRA_REPO_ROOT") || "").trim();
   if (envRoot) return path.resolve(envRoot);
   return path.resolve(__dirname, "..");
 }
@@ -15,10 +16,10 @@ function resolveRepoRoot() {
 function readMonitorConfig() {
   return {
     repoRoot: resolveRepoRoot(),
-    branch: String(process.env.CLOUD_SYNC_BRANCH || "main").trim() || "main",
-    pollMs: toMs(process.env.CLOUD_SYNC_POLL_MS || "1000", 1000),
-    startupPull: String(process.env.CLOUD_SYNC_STARTUP_PULL || "true").trim().toLowerCase() !== "false",
-    verbose: String(process.env.CLOUD_SYNC_VERBOSE || "true").trim().toLowerCase() !== "false",
+    branch: String(env("CLOUD_SYNC_BRANCH") || "main").trim() || "main",
+    pollMs: toMs(env("CLOUD_SYNC_POLL_MS") || "1000", 1000),
+    startupPull: String(env("CLOUD_SYNC_STARTUP_PULL") || "true").trim().toLowerCase() !== "false",
+    verbose: String(env("CLOUD_SYNC_VERBOSE") || "true").trim().toLowerCase() !== "false",
   };
 }
 

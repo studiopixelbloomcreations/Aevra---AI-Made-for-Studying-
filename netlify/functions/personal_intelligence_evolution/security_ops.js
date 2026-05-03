@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 const rateBuckets = new Map();
@@ -18,7 +19,7 @@ function getClientKey(event) {
 }
 
 function enforceRateLimit(event, bucketName, limit, windowMs) {
-  if (String(process.env.PI_DISABLE_RATE_LIMIT || "").trim().toLowerCase() === "true") {
+  if (String(env("PI_DISABLE_RATE_LIMIT") || "").trim().toLowerCase() === "true") {
     return {
       allowed: true,
       remaining: Number.MAX_SAFE_INTEGER,
@@ -45,7 +46,7 @@ function enforceRateLimit(event, bucketName, limit, windowMs) {
 }
 
 function requireAdmin(event) {
-  const expected = String(process.env.PI_ADMIN_TOKEN || "").trim();
+  const expected = String(env("PI_ADMIN_TOKEN") || "").trim();
   if (!expected) {
     return { ok: false, reason: "PI_ADMIN_TOKEN missing" };
   }

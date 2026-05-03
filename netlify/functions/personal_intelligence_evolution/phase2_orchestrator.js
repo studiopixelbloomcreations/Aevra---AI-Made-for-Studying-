@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 const { CloudStateStore } = require("./cloud_state_store");
@@ -22,7 +23,7 @@ async function runPhase2Cycle(envelope) {
     graph_summary: graphResult && graphResult.summary ? graphResult.summary : { node_count: 0, edge_count: 0 },
   }, {
     max_tasks: 3,
-    backoff_base_ms: Number(process.env.PI_SWARM_BACKOFF_BASE_MS || 4000),
+    backoff_base_ms: Number(env("PI_SWARM_BACKOFF_BASE_MS") || 4000),
   });
 
   return {

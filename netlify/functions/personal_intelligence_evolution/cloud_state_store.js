@@ -1,3 +1,4 @@
+const { env } = require("../../../core/env");
 "use strict";
 
 const inMemoryDocs = {};
@@ -19,12 +20,12 @@ function endpoint(owner, repo, filePath) {
 
 class CloudStateStore {
   constructor() {
-    this.token = String(process.env.GITHUB_TOKEN || "").trim();
-    this.owner = String(process.env.GITHUB_REPO_OWNER || "").trim();
-    this.repo = String(process.env.GITHUB_REPO_NAME || "").trim();
-    this.branch = String(process.env.GITHUB_REPO_BRANCH || "main").trim();
+    this.token = String(env("GITHUB_TOKEN") || "").trim();
+    this.owner = String(env("GITHUB_REPO_OWNER") || "").trim();
+    this.repo = String(env("GITHUB_REPO_NAME") || "").trim();
+    this.branch = String(env("GITHUB_REPO_BRANCH") || "main").trim();
     this.basePath = String(
-      process.env.PI_STATE_REPO_PATH || "netlify/functions/personal_intelligence_evolution/state"
+      env("PI_STATE_REPO_PATH") || "netlify/functions/personal_intelligence_evolution/state"
     ).trim();
     this.enabled = !!(this.token && this.owner && this.repo);
   }
