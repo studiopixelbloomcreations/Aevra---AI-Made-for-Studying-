@@ -3437,7 +3437,7 @@
       : {};
     const cloudConfig = agent.cloud_config && typeof agent.cloud_config === "object" ? agent.cloud_config : {};
     return {
-      user_id: String(base.user_id || (profile.user_identity && profile.user_identity.username) || "").trim(),
+      user_id: String((getAuthIdentity() && getAuthIdentity().email && getAuthIdentity().email !== EMAIL ? getAuthIdentity().email : null) || base.user_id || (profile.user_identity && profile.user_identity.username) || "").trim(),
       unique_id: String(base.unique_id || agent.unique_identifier || cloudConfig.unique_id || cloudConfig.unique_identifier || "").trim(),
       profile_file: String(base.profile_file || profile.file_name || "").trim(),
       personalization_prompt: String(
@@ -5758,7 +5758,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: t,
-            email: EMAIL,
+            email: (getAuthIdentity() && getAuthIdentity().email) || EMAIL,
             language: language,
             subject: subject,
             title: "Personal Intelligence",
@@ -5805,7 +5805,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: t,
-          email: EMAIL,
+          email: (getAuthIdentity() && getAuthIdentity().email) || EMAIL,
           language: localStorage.getItem("g9_language") || "English",
           subject: localStorage.getItem("g9_subject") || "General",
           title: "Personal Intelligence",
