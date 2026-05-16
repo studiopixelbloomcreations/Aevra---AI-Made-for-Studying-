@@ -5856,6 +5856,18 @@
         hideTypingIndicator();
         return;
       }
+      if (data && data.ncs && data.ncs.ncs_brain_status) {
+        if (!window.__visNcsBrainLogged) {
+          window.__visNcsBrainLogged = true;
+          if (data.ncs.ncs_brain_status === "fallback") {
+            addLog("assistant", "No API key detected for NCS Brain. Falling back to rules mode.");
+          } else if (data.ncs.ncs_brain_status === "active") {
+            addLog("assistant", "NCS Brain API found! NCS Brain is successfully started up and running.");
+          } else if (data.ncs.ncs_brain_status === "error") {
+            addLog("assistant", "NCS Brain encountered an error. Falling back to rules mode.");
+          }
+        }
+      }
       hideTypingIndicator();
       addLog("assistant", "Aevra AI: " + answer);
       pushHistory("assistant", answer);

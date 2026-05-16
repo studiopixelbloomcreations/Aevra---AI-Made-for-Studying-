@@ -583,6 +583,7 @@ exports.handler = async function handler(event) {
       system_state: ncsSystemState,
       cognitive_blueprint: cognitiveBlueprint,
       prompt_preview: ncsPrompt.slice(0, 600),
+      ncs_brain_status: brainDecision.error === "no_brain_models_configured" ? "fallback" : (brainDecision.error ? "error" : "active")
     },
     integration_state: {
       spotify_connected: false,
