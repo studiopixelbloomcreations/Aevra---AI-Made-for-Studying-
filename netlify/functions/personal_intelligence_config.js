@@ -1,10 +1,11 @@
-const { env, allowedOrigin } = require("../../core/env");
-const logger = require("../../core/logger");
+const { getUserProfile, getUserProfileByUniqueId, saveUserProfile } = require("../../core/agent_comm");
+const { buildUserProfileRecord } = require("../../core/personalization_engine");
+const { getCurrentUser } = require("../../core/identity_system");
+const { generateUniqueId } = require("../../core/unique_id");
+const { generateFailsafeIdentity } = require("../../core/failsafe_identity");
+const { allowedOrigin } = require("../../core/env");
 
 function json(statusCode, obj) {
-  const normalized = Object.prototype.hasOwnProperty.call(obj || {}, "success")
-    ? obj
-    : { success: statusCode < 400, data: statusCode < 400 ? obj : null, error: statusCode < 400 ? null : (obj && obj.error || "Request failed") };
   return {
     statusCode,
     headers: {
@@ -14,68 +15,105 @@ function json(statusCode, obj) {
       "access-control-allow-headers": "content-type,authorization,x-aevra-csrf",
       "cache-control": "no-store",
     },
-    body: JSON.stringify(normalized),
+    body: JSON.stringify(obj),
   };
 }
 
-function supabaseHeaders() {
-  const key = env("SUPABASE_SERVICE_KEY") || env("SUPABASE_ANON_KEY");
-  return { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" };
-}
-
-async function sb(path, options) {
-  const base = String(env("SUPABASE_URL", "")).replace(/\/$/, "");
-  if (!base) throw new Error("SUPABASE_URL is not configured");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    const res = await fetch(`${base}/rest/v1/${path}`, { ...(options || {}), headers: { ...supabaseHeaders(), ...(options && options.headers || {}) }, signal: controller.signal });
-    const text = await res.text();
-    const data = text ? JSON.parse(text) : null;
-    if (!res.ok) throw new Error(data && data.message ? data.message : `Supabase HTTP ${res.status}`);
-    return data;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function isUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+function normalizeSavedProfile(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const personalization = profile.personalization_data && typeof profile.personalization_data === "object"
+    ? profile.personalization_data
+    : {};
+  const aiConfig = profile.ai_config && typeof profile.ai_config === "object"
+    ? profile.ai_config
+    : {};
+  const uniqueId = String(profile.unique_id || profile.unique_identifier || "").trim();
+  return Object.assign({}, profile, {
+    unique_id: uniqueId,
+    unique_identifier: uniqueId,
+    personalization_data: personalization,
+    ai_config: aiConfig,
+    user_config: Object.assign({}, profile.user_config || {}, {
+      user_id: profile.user_id,
+      unique_id: uniqueId,
+      unique_identifier: uniqueId,
+      personalization_data: personalization,
+      ai_config: aiConfig,
+    }),
+  });
 }
 
 exports.handler = async function handler(event) {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
+
   try {
     if (event.httpMethod === "GET") {
-      const userId = String((event.queryStringParameters && (event.queryStringParameters.userId || event.queryStringParameters.user_id)) || "").trim();
-      if (!userId) return json(422, { ok: false, error: "userId is required" });
-      if (!isUuid(userId)) return json(200, { success: true, data: { config: null }, error: null });
-      const rows = await sb(`personalization_configs?user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`, { method: "GET" });
-      return json(200, { success: true, data: { config: rows && rows[0] || null }, error: null });
+      const user_id = String((event.queryStringParameters && (event.queryStringParameters.user_id || event.queryStringParameters.userId)) || "").trim();
+      const unique_id = String((event.queryStringParameters && (event.queryStringParameters.unique_id || event.queryStringParameters.uniqueId)) || "").trim();
+      if (!user_id && !unique_id) {
+        return json(400, { ok: false, success: false, error: "user_id or unique_id is required" });
+      }
+      const profile = normalizeSavedProfile(user_id ? await getUserProfile(user_id) : await getUserProfileByUniqueId(unique_id));
+      return json(200, {
+        ok: true,
+        success: true,
+        profile,
+        config: profile ? profile.user_config : null,
+        data: { profile, config: profile ? profile.user_config : null },
+      });
     }
+
     if (event.httpMethod === "POST") {
-      const payload = JSON.parse(event.body || "{}");
-      const userId = String(payload.userId || payload.user_id || "").trim();
-      const config = payload.config || payload.ai_behavior_configuration || payload;
-      if (!userId) return json(422, { ok: false, error: "userId is required" });
-      if (!isUuid(userId)) return json(200, { success: true, data: { config }, error: null });
-      const row = {
-        user_id: userId,
-        tone: String(config.tone || "friendly"),
-        humor_level: Number(config.humor_level || config.humor || 5),
-        verbosity: String(config.verbosity || "medium"),
-        teaching_style: String(config.teaching_style || config.style || "socratic"),
-        language: String(config.language || "en"),
-        subjects: Array.isArray(config.subjects) ? config.subjects : [],
-        raw_config: config,
-        updated_at: new Date().toISOString(),
-      };
-      const saved = await sb("personalization_configs?on_conflict=user_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(row) });
-      return json(200, { success: true, data: { config: saved && saved[0] || row }, error: null });
+      let payload = {};
+      try {
+        payload = JSON.parse(event.body || "{}");
+      } catch (error) {
+        return json(400, { ok: false, success: false, error: "Invalid JSON body" });
+      }
+
+      const identity = getCurrentUser(payload.identity || payload.user || payload) || {};
+      const built = buildUserProfileRecord({
+        ...payload,
+        identity,
+        user_id: payload.user_id || payload.userId || identity.user_id,
+        answers: payload.answers || payload.personalization_answers || payload.onboarding_answers || {},
+      });
+      const unique_id = generateUniqueId({
+        user_id: built.user_id,
+        personalization_data: built.personalization_data,
+        ai_config: built.ai_config,
+      }) || generateFailsafeIdentity(built).unique_id;
+      const saved = normalizeSavedProfile(await saveUserProfile(built.user_id, {
+        personalization_data: built.personalization_data,
+        ai_config: Object.assign({}, built.ai_config, {
+          personalization_prompt: built.personalization_prompt,
+        }),
+        unique_id,
+      }));
+
+      return json(200, {
+        ok: true,
+        success: true,
+        profile: saved,
+        config: saved ? saved.user_config : null,
+        identity: {
+          user_id: built.user_id,
+          unique_id,
+          unique_identifier: unique_id,
+        },
+        data: {
+          profile: saved,
+          config: saved ? saved.user_config : null,
+        },
+      });
     }
-    return json(405, { ok: false, error: "Method not allowed" });
+
+    return json(405, { ok: false, success: false, error: "Method not allowed" });
   } catch (error) {
-    logger.error("personal_intelligence_config", { error: String(error && error.stack || error) });
-    return json(500, { success: false, data: null, error: "Aevra settings are unavailable right now." });
+    return json(500, {
+      ok: false,
+      success: false,
+      error: String(error && error.message ? error.message : error),
+    });
   }
 };

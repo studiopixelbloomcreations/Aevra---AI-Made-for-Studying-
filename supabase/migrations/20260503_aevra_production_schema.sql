@@ -10,12 +10,45 @@ create table if not exists public.user_profiles (
 );
 
 alter table public.user_profiles add column if not exists id uuid;
+alter table public.user_profiles add column if not exists user_id text;
 alter table public.user_profiles add column if not exists display_name text;
 alter table public.user_profiles add column if not exists grade integer default 9;
 alter table public.user_profiles add column if not exists school text;
 alter table public.user_profiles add column if not exists created_at timestamptz default now();
 alter table public.user_profiles add column if not exists updated_at timestamptz default now();
-create unique index if not exists user_profiles_id_unique on public.user_profiles(id) where id is not null;
+
+update public.user_profiles
+set id = case
+  when user_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then user_id::uuid
+  else gen_random_uuid()
+end
+where id is null;
+
+alter table public.user_profiles
+  alter column id set default gen_random_uuid();
+
+alter table public.user_profiles
+  alter column id set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.user_profiles'::regclass
+      and conname = 'user_profiles_id_key'
+  ) and not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.user_profiles'::regclass
+      and conname = 'user_profiles_pkey'
+      and pg_get_constraintdef(oid) like '%(id)%'
+  ) then
+    alter table public.user_profiles
+      add constraint user_profiles_id_key unique (id);
+  end if;
+end $$;
 
 create table if not exists public.voice_signatures (
   id uuid primary key default gen_random_uuid(),

@@ -67,6 +67,15 @@
     }
   }
 
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function getAuthIdentity() {
     try {
       if (window.Auth && typeof window.Auth.getUser === "function") {
@@ -82,7 +91,7 @@
       }
     } catch (e) {}
     const email = String(localStorage.getItem("g9_email") || EMAIL).trim();
-    return email ? { user_id: email, email: email, name: "", avatar: "" } : null;
+    return email ? { user_id: email, email: email, name: "", avatar: "", guest: email === EMAIL } : null;
   }
 
   function buildAuthBackedProfile(identity, remoteProfile) {
@@ -5405,7 +5414,6 @@
       if (VIS_CAMERA_DISABLED) {
         setVisOfflineState(false, "Online - " + String(visLastKnownUserLabel || "User"));
         setAssistantState("listening", "Listening");
-        dbg("VIS camera runtime disabled; using auth identity only");
         return;
       }
       if (visOffline) {
@@ -5978,6 +5986,9 @@
         status: "Complete",
         observatory: data && data.observatory ? data.observatory : { type: mode, complexity: "-", queries: [{ text: t }] },
         harmony: data && data.agent_harmony ? data.agent_harmony : { model_used: data && data.ai_provider ? data.ai_provider : "agent_harmony", fallback_used: false },
+        ncs: data && data.ncs ? data.ncs : undefined,
+        learned_facts: data && data.learned_facts ? data.learned_facts : undefined,
+        memory_updates: data && data.memory_updates ? data.memory_updates : undefined,
         agent: agentContext,
         ai_provider: data && data.ai_provider ? data.ai_provider : "",
       });

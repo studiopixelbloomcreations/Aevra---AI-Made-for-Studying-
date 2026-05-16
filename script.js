@@ -1355,16 +1355,30 @@
       : [];
 
     try{
-      await ensurePuterReady(true);
-      const mainModel = getMainModel();
-      const systemPrompt =
-        'You are Aevra AI, a helpful study tutor for Grade 9 students. ' +
-        'Keep answers accurate, clear, and practical. ' +
-        'Current subject: ' + state.subject + '. ' +
-        'Respond in ' + state.language + '.';
-      const chatMessages = [{ role: 'system', content: systemPrompt }].concat(history);
-      const puterResp = await window.puter.ai.chat(chatMessages, { model: mainModel });
-      const answerRaw = extractPuterText(puterResp);
+      const res = await (window.Api && window.Api.apiFetch
+        ? window.Api.apiFetch('/ask', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              subject: state.subject,
+              language: state.language,
+              student_question: text,
+              history
+            })
+          })
+        : fetch('/ask', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              subject: state.subject,
+              language: state.language,
+              student_question: text,
+              history
+            })
+          }));
+      const data = await safeReadJson(res);
+      if(!res.ok) throw new Error(getBackendErrorMessage(data));
+      const answerRaw = data && data.answer ? String(data.answer) : '';
       if(!answerRaw){
         throw new Error('Main AI returned an empty response.');
       }

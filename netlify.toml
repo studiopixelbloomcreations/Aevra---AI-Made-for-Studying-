@@ -80,6 +80,11 @@
   status = 200
 
 [[redirects]]
+  from = "/gamification/add_points"
+  to = "/.netlify/functions/gamification_add_points"
+  status = 200
+
+[[redirects]]
   from = "/personal-intelligence/ask"
   to = "/.netlify/functions/personal_intelligence_ask"
   status = 200

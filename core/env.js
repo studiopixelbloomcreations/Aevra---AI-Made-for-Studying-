@@ -8,15 +8,53 @@ function parseEnv() {
       "{}";
     try { return typeof raw === "string" ? JSON.parse(raw || "{}") : raw || {}; } catch (error) { return {}; }
   }
-  try { return JSON.parse(process.env.AEVRA_ENV || "{}"); } catch (error) { return {}; }
+  try {
+    const parsed = JSON.parse(process.env.AEVRA_ENV || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
 }
 
 const ENV = parseEnv();
+function parseMasterConfig() {
+  if (typeof process === "undefined" || !process.env) return {};
+  try {
+    const parsed = JSON.parse(process.env.AEVRA_MASTER_CONFIG || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+const MASTER_CONFIG = parseMasterConfig();
+const MASTER_ENV_MAP = {
+  GROQ_API_KEY: ["groq", "apiKey"],
+  OPENROUTER_API_KEY: ["openrouter", "apiKey"],
+  MISTRAL_API_KEY: ["mistral", "apiKey"],
+  HUGGINGFACE_API_KEY: ["huggingface", "apiKey"],
+  DEEPSEEK_API_KEY: ["deepseek", "apiKey"],
+  SUPABASE_URL: ["supabase", "url"],
+  SUPABASE_ANON_KEY: ["supabase", "anonKey"],
+  SUPABASE_SERVICE_KEY: ["supabase", "serviceRoleKey"],
+  SUPABASE_SERVICE_ROLE_KEY: ["supabase", "serviceRoleKey"],
+  ELEVENLABS_API_KEY: ["elevenlabs", "apiKey"],
+  ALLOWED_ORIGINS: ["security", "allowedOrigins"],
+};
 
 function env(name, fallback) {
   const value = ENV && Object.prototype.hasOwnProperty.call(ENV, name) ? ENV[name] : undefined;
-  if (value === undefined || value === null || value === "") return fallback === undefined ? "" : fallback;
-  return value;
+  if (value !== undefined && value !== null && value !== "") return value;
+  if (typeof process !== "undefined" && process.env && process.env[name]) return process.env[name];
+  const path = MASTER_ENV_MAP[name];
+  if (path && MASTER_CONFIG && MASTER_CONFIG[path[0]]) {
+    const sectionValue = MASTER_CONFIG[path[0]][path[1]];
+    if (sectionValue !== undefined && sectionValue !== null && sectionValue !== "") return sectionValue;
+  }
+  if (name === "SUPABASE_SERVICE_KEY" && typeof process !== "undefined" && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return process.env.SUPABASE_SERVICE_ROLE_KEY;
+  }
+  return fallback === undefined ? "" : fallback;
 }
 
 function validateEnv(required) {

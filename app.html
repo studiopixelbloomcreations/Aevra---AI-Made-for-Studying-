@@ -554,22 +554,16 @@
     </div>
   </div>
 
-  <script src="api.js?v=20260403fix4"></script>
+  <script src="api.js?v=20260516sameorigin1"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
   <script src="firebase_runtime_config.js"></script>
   <script>
     (function() {
-      if (!navigator.onLine || window.__VIS_TEST_USE_MOCK) {
-        console.log('Puter.js suppressed (offline or test)');
-        return;
-      }
-      var s = document.createElement('script');
-      s.src = 'https://js.puter.com/v2/';
-      s.async = false;
-      s.defer = false;
-      document.head.appendChild(s);
+      window.puter = window.puter || {};
+      window.puter.quiet = true;
+      window.__AEVRA_LAZY_PUTER__ = true;
     })();
   </script>
   <script src="puter_voice_catalog.js?v=20260303voice1"></script>
@@ -596,8 +590,8 @@
   <script src="ExamModeToggle/ExamModeToggle.js?v=20260402fix2"></script>
   <script src="public/harmony/harmony_system.js?v=20260516ncs1"></script>
   <script src="ui/harmony_panel.js?v=20260516ncs1"></script>
-  <script src="script.js?v=20260306admin2"></script>
-  <script src="personal_intelligence_ui.js?v=20260408restore1"></script>
+  <script src="script.js?v=20260516sameorigin1"></script>
+  <script src="personal_intelligence_ui.js?v=20260516sameorigin1"></script>
   <svg style="display:none">
     <defs>
       <filter id="glass-distortion">
