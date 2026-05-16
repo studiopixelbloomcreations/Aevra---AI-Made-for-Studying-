@@ -13,6 +13,7 @@ const { buildUserProfileRecord, buildPersonalizationPrompt } = require("../../co
 const { generateUniqueId } = require("../../core/unique_id");
 const { generateFailsafeIdentity } = require("../../core/failsafe_identity");
 const { detectSystemState, buildCognitiveBlueprint, compileCognitivePrompt, updateCognitivePerformance } = require("../../core/ncs_engine");
+const { invokeBrain } = require("../../core/ncs_brain");
 const { readLumenFile, updateLumenMemory: lumenUpdate, buildLumenPrompt } = require("../../core/lumen_engine");
 
 function json(statusCode, obj) {
@@ -375,6 +376,32 @@ exports.handler = async function handler(event) {
   const extractedUpdates = detectMemoryUpdates(message);
   const combinedKnownFacts = mergeKnownFacts(incomingKnownFacts, extractedUpdates);
   const observatory = analyzeInput(message);
+  
+  // ---> NEW: Invoke NCS AI Brain <---
+  const brainDecision = await invokeBrain({
+    message: message,
+    known_facts: combinedKnownFacts,
+    lumen_memory: !!lumenPrompt,
+    observatory: observatory,
+  });
+  
+  if (!brainDecision.error) {
+    // Merge memory commands from brain
+    if (brainDecision.memory_commands) {
+      Object.assign(extractedUpdates, brainDecision.memory_commands);
+      Object.assign(combinedKnownFacts, brainDecision.memory_commands);
+    }
+    
+    // Inject brain prompts into personalization
+    if (brainDecision.prompt_injection) {
+      personalizationPrompt += `\n\nNCS BRAIN DIRECTIVE: ${brainDecision.prompt_injection}`;
+    }
+    if (brainDecision.response_directives) {
+      const d = brainDecision.response_directives;
+      personalizationPrompt += `\n\nResponse Directives -> Tone: ${d.tone}, Depth: ${d.depth}, Length: ${d.length}`;
+    }
+  }
+
   const action = detectAction(message, history, combinedKnownFacts);
   const ncsContext = {
     userMessage: message,
@@ -391,8 +418,19 @@ exports.handler = async function handler(event) {
     metadata: { language, subject, runtime: "netlify" },
     sessionData: { profile: profile || {}, known_facts: combinedKnownFacts, history },
   };
-  const ncsSystemState = detectSystemState(ncsContext);
+  const ncsSystemState = !brainDecision.error ? {
+    systemType: brainDecision.system_type || "adaptive_learning",
+    confidence: brainDecision.confidence || 0.9,
+    signals: [{ name: brainDecision.system_type, weight: 1, evidence: 1 }]
+  } : detectSystemState(ncsContext);
+  
   const cognitiveBlueprint = buildCognitiveBlueprint(ncsContext, ncsSystemState);
+  
+  // Override model if brain decided
+  if (!brainDecision.error && brainDecision.model_override) {
+    cognitiveBlueprint.model_roles = { [brainDecision.model_override]: "primary_responder" };
+  }
+  
   const ncsPrompt = compileCognitivePrompt(cognitiveBlueprint);
   const actionUpdates = {};
   if (action && action.home_address) actionUpdates.home_address = String(action.home_address);
@@ -410,6 +448,7 @@ exports.handler = async function handler(event) {
     systemState: ncsSystemState,
     cognitiveBlueprint,
     ncsPrompt,
+    modelOverride: !brainDecision.error ? brainDecision.model_override : null,
   });
   const answer = cloudEvolveOnly || action
     ? seedAnswer

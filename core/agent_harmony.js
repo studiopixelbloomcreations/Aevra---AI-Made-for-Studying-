@@ -51,7 +51,11 @@ async function tryAdapter(modelName, context, adapters) {
 }
 
 async function coordinateQuery(analysis, options = {}) {
-  const preferred = preferredModelsFor(analysis).filter((name) => name !== "puter");
+  let preferred = preferredModelsFor(analysis).filter((name) => name !== "puter");
+  if (options.modelOverride && typeof options.modelOverride === "string" && preferred.includes(options.modelOverride)) {
+    // Bring the overridden model to the front of the queue
+    preferred = [options.modelOverride, ...preferred.filter(m => m !== options.modelOverride)];
+  }
   const adapters = options.adapters || {};
   const attempts = [];
   const successes = [];
@@ -139,6 +143,7 @@ async function coordinateAgentHarmony(observatoryOutput, options = {}) {
     const coordinated = await coordinateQuery(query, Object.assign({}, options, {
       cognitiveBlueprint,
       ncsPrompt,
+      modelOverride: options.modelOverride,
     }));
     query_plans.push({
       query_id: query.id,

@@ -161,4 +161,5 @@ module.exports = {
   buildCognitiveBlueprint,
   compileCognitivePrompt,
   updateCognitivePerformance,
+  SIGNALS,
 };
