@@ -642,54 +642,11 @@
   }
 
   async function runPuterChatWithModel(messages, modelId){
-    const model = String(modelId || '').trim();
-    if(!model) return '';
-    try {
-      const resp = await window.puter.ai.chat(messages, { model: model });
-      return extractPuterText(resp);
-    } catch (e) {
-      return '';
-    }
+    return '';
   }
 
   async function runAgentSwarmSummary(history, userText){
-    const swarmModels = [
-      'openai/gpt-5.2-chat',
-      'google/gemini-2.5-flash',
-      'anthropic/claude-opus-4-6',
-      'x-ai/grok-4',
-      'meta/llama-3.3-70b-instruct'
-    ];
-    const baseMessages = history.concat([{ role: 'user', content: String(userText || '') }]);
-    const outputs = [];
-    for(let i=0;i<swarmModels.length;i+=1){
-      const modelId = swarmModels[i];
-      const out = await runPuterChatWithModel(baseMessages, modelId);
-      if(out){
-        outputs.push({ model: modelId, answer: out });
-      }
-    }
-    if(!outputs.length){
-      const fallback = await runPuterChatWithModel(baseMessages, getPiModel());
-      if(fallback){
-        outputs.push({ model: getPiModel(), answer: fallback });
-      }
-    }
-    if(!outputs.length){
-      throw new Error('Agent Swarm returned no model responses.');
-    }
-    const synthesizerInput = outputs.map(function(o, idx){
-      return 'Model #' + String(idx + 1) + ' [' + String(o.model) + ']:\n' + String(o.answer);
-    }).join('\n\n');
-    const synthMessages = [
-      { role: 'system', content: 'Synthesize multiple AI model outputs into one high-quality final answer. Keep only the best parts and resolve conflicts.' },
-      { role: 'user', content: 'User request:\n' + String(userText || '') + '\n\nModel outputs:\n' + synthesizerInput }
-    ];
-    const finalAnswer = await runPuterChatWithModel(synthMessages, getPiModel());
-    if(!finalAnswer){
-      return outputs[0].answer;
-    }
-    return finalAnswer;
+    return '';
   }
 
   function getPiKnownFacts(){
@@ -934,23 +891,7 @@
   }
 
   async function fetchMainPuterModels(interactive){
-    try {
-      await ensurePuterReady(!!interactive);
-      const raw = await window.puter.ai.listModels();
-      const list = Array.isArray(raw) ? raw : [];
-      const mapped = list.map(function(m){
-        const id = String((m && (m.id || m.name)) || '').trim();
-        if(!id) return null;
-        const provider = String((m && m.provider) || '').trim();
-        const label = provider ? (id + ' (' + provider + ')') : id;
-        return { id: id, label: label };
-      }).filter(Boolean);
-      if(!mapped.length) return fallbackMainModels();
-      mapped.sort(function(a,b){ return String(a.id).localeCompare(String(b.id)); });
-      return mapped;
-    } catch (e) {
-      return fallbackMainModels();
-    }
+    return fallbackMainModels();
   }
 
   async function initMainModelSelector(){

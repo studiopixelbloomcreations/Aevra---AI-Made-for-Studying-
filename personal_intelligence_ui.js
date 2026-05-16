@@ -4880,6 +4880,9 @@
   async function ensurePuterReady(interactive) {
     if (isOffline()) throw new Error("OFFLINE_MODE");
     if (window.__VIS_TEST_USE_MOCK || navigator.onLine === false) return;
+    if ((!window.puter || !window.puter.ai) && window.AevraVoicePuter && typeof window.AevraVoicePuter.load === "function") {
+      await window.AevraVoicePuter.load();
+    }
     if (!window.puter || !window.puter.ai) {
       // Wait up to 5 seconds for puter.js to load asynchronously
       let attempts = 0;
@@ -4919,27 +4922,7 @@
   }
 
   async function fetchPuterModels() {
-    if (isOffline()) return fallbackPuterModels();
-    if (window.__puterSocketIOFailed) return fallbackPuterModels();
-    try {
-      await ensurePuterReady(false);
-      if (window.__puterSocketIOFailed) return fallbackPuterModels();
-      const raw = await window.puter.ai.listModels();
-      const list = Array.isArray(raw) ? raw : [];
-      const mapped = list.map(function (m) {
-        const id = String((m && (m.id || m.name)) || "").trim();
-        if (!id) return null;
-        const provider = String((m && m.provider) || "").trim();
-        const label = provider ? (id + " (" + provider + ")") : id;
-        return { id: id, label: label };
-      }).filter(Boolean);
-      if (!mapped.length) return fallbackPuterModels();
-      mapped.sort(function (a, b) { return String(a.id).localeCompare(String(b.id)); });
-      return mapped;
-    } catch (e) {
-      console.warn('[PI] Failed to fetch Puter models:', e && e.message);
-      return fallbackPuterModels();
-    }
+    return fallbackPuterModels();
   }
 
   function detectMemoryUpdatesLocal(message) {
@@ -5476,26 +5459,7 @@
   }
 
   async function generatePuterEvolutionCode(userText, language, subject) {
-    try {
-      await ensurePuterReady(false);
-      const model = getPIModel();
-      const prompt = [
-        "Generate safe JavaScript module code only.",
-        "No shell/system commands. No process env mutation.",
-        "Required export: module.exports = { id, describe, run }",
-        `Language: ${String(language || "English")}`,
-        `Subject: ${String(subject || "General")}`,
-        "User message:",
-        String(userText || "").slice(0, 900),
-        "Known facts:",
-        JSON.stringify(knownFacts || {}).slice(0, 2200),
-      ].join("\n");
-      const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
-      return String(extractPuterText(resp) || "").trim();
-    } catch (e) {
-      dbg("puter code generation failed, using fallback", e && e.message);
-      return "";
-    }
+    return "";
   }
 
   function buildFallbackEvolutionCode(userText, updates) {
@@ -5529,94 +5493,11 @@
   }
 
   async function inferAdditionalFactsWithPuter(userText, updates) {
-    try {
-      await ensurePuterReady(false);
-      const model = getPIModel();
-      const prompt = [
-        "Extract personal facts from the user message.",
-        "Return strict JSON object only.",
-        "Format: {\"facts\": {\"fact_key\": \"value\"}}",
-        "Use keys like: favorite_subject, favorite_color, favorite_sport, best_friend_name, career_goal, etc.",
-        "If unknown relation appears, use key prefix fact_.",
-        "Do not include anything except JSON.",
-        "Message:",
-        String(userText || "").slice(0, 900),
-        "Known extracted facts:",
-        JSON.stringify(updates || {}).slice(0, 1200),
-      ].join("\n");
-      const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
-      const raw = String(extractPuterText(resp) || "").trim();
-      const s = raw.indexOf("{");
-      const e = raw.lastIndexOf("}");
-      if (s < 0 || e <= s) return {};
-      const parsed = JSON.parse(raw.slice(s, e + 1));
-      const facts = parsed && parsed.facts && typeof parsed.facts === "object" ? parsed.facts : {};
-      const out = {};
-      Object.keys(facts).forEach(function (k) {
-        const keyRaw = String(k || "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_+|_+$/g, "");
-        if (!keyRaw) return;
-        const val = String(facts[k] || "").trim();
-        if (!val) return;
-        const key = /^(name|school|city|country|grade|preferred_language|favorite_subject|favorite_color|favorite_sport|hobbies|goal|best_friend_name)$/.test(keyRaw)
-          ? keyRaw
-          : (keyRaw.startsWith("fact_") ? keyRaw : ("fact_" + keyRaw));
-        out[key.slice(0, 64)] = val.slice(0, 180);
-      });
-      return out;
-    } catch (e) {
-      dbg("puter fact inference failed", e && e.message);
-      return {};
-    }
+    return {};
   }
 
   async function inferModelMemoryFactsWithPuter(userText, assistantAnswer, updates) {
-    try {
-      await ensurePuterReady(false);
-      const model = getPIModel();
-      const prompt = [
-        "You are a memory extractor.",
-        "List only user-profile facts you already remember or can confidently infer from conversation context.",
-        "Return strict JSON only in this format:",
-        "{\"facts\": [{\"key\":\"favorite_subject\",\"value\":\"ICT\",\"confidence\":0.0}]}",
-        "Rules:",
-        "- confidence must be 0..1",
-        "- include only confidence >= 0.85",
-        "- never invent uncertain facts",
-        "- prefer stable profile facts (name, school, city, preferences, friends, goals, habits)",
-        "- if no reliable facts, return {\"facts\":[]}",
-        "Latest user message:",
-        String(userText || "").slice(0, 900),
-        "Latest assistant answer:",
-        String(assistantAnswer || "").slice(0, 900),
-        "Current known facts:",
-        JSON.stringify(knownFacts || {}).slice(0, 2400),
-        "Current extracted facts:",
-        JSON.stringify(updates || {}).slice(0, 1200),
-      ].join("\n");
-      const resp = await window.puter.ai.chat([{ role: "user", content: prompt }], { model: model });
-      const raw = String(extractPuterText(resp) || "").trim();
-      const s = raw.indexOf("{");
-      const e = raw.lastIndexOf("}");
-      if (s < 0 || e <= s) return {};
-      const parsed = JSON.parse(raw.slice(s, e + 1));
-      const rows = Array.isArray(parsed && parsed.facts) ? parsed.facts : [];
-      const out = {};
-      rows.forEach(function (r) {
-        const keyRaw = String(r && r.key ? r.key : "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_+|_+$/g, "");
-        const val = String(r && r.value ? r.value : "").trim();
-        const conf = Number(r && r.confidence);
-        if (!keyRaw || !val) return;
-        if (!Number.isFinite(conf) || conf < 0.85) return;
-        const key = /^(name|school|city|country|grade|preferred_language|favorite_subject|favorite_color|favorite_sport|hobbies|goal|best_friend_name)$/.test(keyRaw)
-          ? keyRaw
-          : (keyRaw.startsWith("fact_") ? keyRaw : ("fact_" + keyRaw));
-        out[key.slice(0, 64)] = val.slice(0, 180);
-      });
-      return out;
-    } catch (e) {
-      dbg("puter model-memory inference failed", e && e.message);
-      return {};
-    }
+    return {};
   }
 
   async function sendCloudEvolutionFromPuter(userText, puterAnswer, generatedCodeFromCaller, updatesFromCaller) {
