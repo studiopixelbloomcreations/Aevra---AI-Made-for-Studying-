@@ -323,6 +323,7 @@ exports.handler = async function handler(event) {
   const cloudEvolveOnly = !!(payload && payload.cloud_evolve_only);
   let profile = null;
   let personalizationPrompt = "";
+  let lumenPrompt = "";
 
   try {
     profile = await getUserProfile(resolvedUserId);
@@ -354,7 +355,7 @@ exports.handler = async function handler(event) {
     
     // OVERRIDE basic personalization with LUMEN
     const lumenMemory = await readLumenFile(String(authUser.email || payload.email || "guest@student.com"), profile ? profile.unique_id : "");
-    const lumenPrompt = buildLumenPrompt(lumenMemory);
+    lumenPrompt = buildLumenPrompt(lumenMemory);
     
     if (lumenPrompt) {
       // Use the deep LUMEN memory directly, overriding the static initial profile
