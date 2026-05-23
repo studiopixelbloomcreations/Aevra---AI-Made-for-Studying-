@@ -9,6 +9,7 @@ const rootFilesToCopy = [
   "account.js",
   "api.js",
   "app.html",
+  "aura-live.html",
   "auth.js",
   "badges.js",
   "chat.js",
@@ -54,6 +55,7 @@ const rootDirsToCopy = [
   "ExamModeToggle",
   "public",
   "ui",
+  "src/aura-live",
 ];
 
 function cleanDir(target) {
