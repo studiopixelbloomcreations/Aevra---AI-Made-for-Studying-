@@ -12,6 +12,11 @@
   to = "/index.html"
   status = 200
 
+[[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
 
 # API redirect to Netlify Functions
 [[redirects]]

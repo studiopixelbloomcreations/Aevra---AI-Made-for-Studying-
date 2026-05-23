@@ -140,8 +140,13 @@ export const AuraLive: React.FC = () => {
         language,
         mode: "aura_live",
         vocalStyle: store.intelligenceProfile.vocalStyle,
+        energyLevel: store.intelligenceProfile.energyLevel,
+        correctionStyle: store.intelligenceProfile.correctionStyle,
+        motivationStyle: store.intelligenceProfile.motivationStyle,
         weakSubjects: store.intelligenceProfile.weakSubjects,
+        strongSubjects: store.intelligenceProfile.strongSubjects,
         targetGrade: store.intelligenceProfile.targetGrade,
+        memoryPriorities: store.intelligenceProfile.memoryPriorities,
       });
 
       setConnectorStatus("Connecting realtime voice engine...");
@@ -173,7 +178,7 @@ export const AuraLive: React.FC = () => {
           type: "session.update",
           session: {
             turn_detection: { type: "server_vad" },
-            instructions: `You are Aura AI's live personal intelligence voice. Help a Grade 9 student in ${language}. Active subject: ${subject}. Keep answers natural, accurate, and concise.`,
+            instructions: `You are Aura AI's live personal intelligence voice. Help a Grade 9 student in ${language}. Active subject: ${subject}. Voice style: ${store.intelligenceProfile.vocalStyle}. Energy: ${store.intelligenceProfile.energyLevel}. Correction style: ${store.intelligenceProfile.correctionStyle}. Motivation: ${store.intelligenceProfile.motivationStyle}. Keep answers natural, accurate, and tailored to this user's custom agent profile.`,
           },
         }));
       };

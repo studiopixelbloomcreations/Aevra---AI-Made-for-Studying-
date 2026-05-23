@@ -17,10 +17,19 @@ export interface SubjectMastery {
 }
 
 export interface IntelligenceProfile {
+  agentName: string;
+  preferredName: string;
   hobbies: string;
+  interests: string;
   weakSubjects: string;
+  strongSubjects: string;
   targetGrade: string;
   vocalStyle: string;
+  energyLevel: string;
+  correctionStyle: string;
+  motivationStyle: string;
+  memoryPriorities: string;
+  boundaries: string;
 }
 
 interface AppState {
@@ -41,7 +50,8 @@ interface AppState {
   chats: Chat[];
   activeChatId: string;
   setActiveChatId: (id: string) => void;
-  addChat: (title: string, preview?: string) => void;
+  addChat: (title: string, preview?: string) => string;
+  updateChat: (id: string, patch: Partial<Omit<Chat, "id">>) => void;
   deleteChat: (id: string) => void;
   
   // Personalization Systems (10 Premium Keys)
@@ -87,6 +97,25 @@ interface AppState {
   setIntelligenceProfile: (profile: IntelligenceProfile) => void;
 }
 
+function loadChats(): { chats: Chat[]; activeChatId: string } {
+  try {
+    const chats = JSON.parse(localStorage.getItem("aura_chats") || "[]");
+    const activeChatId = String(localStorage.getItem("aura_active_chat") || "");
+    return { chats: Array.isArray(chats) ? chats : [], activeChatId };
+  } catch {
+    return { chats: [], activeChatId: "" };
+  }
+}
+
+function saveChats(chats: Chat[], activeChatId: string) {
+  try {
+    localStorage.setItem("aura_chats", JSON.stringify(chats.slice(0, 40)));
+    localStorage.setItem("aura_active_chat", activeChatId || "");
+  } catch {}
+}
+
+const storedChats = loadChats();
+
 export const useAppStore = create<AppState>((set) => ({
   activeTab: "chats",
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -126,15 +155,17 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  activeChatId: "",
-  setActiveChatId: (id) => set({ activeChatId: id }),
-  chats: [],
+  activeChatId: storedChats.activeChatId,
+  setActiveChatId: (id) => set((state) => {
+    saveChats(state.chats, id);
+    return { activeChatId: id };
+  }),
+  chats: storedChats.chats,
   addChat: (title, preview = "No messages yet") =>
-    set((state) => {
+    {
       const id = Date.now().toString();
-      return {
-        activeChatId: id,
-        chats: [
+      set((state) => {
+        const chats = [
           {
             id,
             title,
@@ -142,15 +173,29 @@ export const useAppStore = create<AppState>((set) => ({
             time: "Just now",
           },
           ...state.chats,
-        ],
-      };
+        ];
+        saveChats(chats, id);
+        return {
+          activeChatId: id,
+          chats,
+        };
+      });
+      return id;
+    },
+  updateChat: (id, patch) =>
+    set((state) => {
+      const chats = state.chats.map((chat) => chat.id === id ? { ...chat, ...patch } : chat);
+      saveChats(chats, state.activeChatId);
+      return { chats };
     }),
   deleteChat: (id) =>
     set((state) => {
       const updatedChats = state.chats.filter((c) => c.id !== id);
+      const activeChatId = updatedChats[0]?.id || "";
+      saveChats(updatedChats, activeChatId);
       return {
         chats: updatedChats,
-        activeChatId: updatedChats[0]?.id || "",
+        activeChatId,
       };
     }),
   
@@ -208,10 +253,19 @@ export const useAppStore = create<AppState>((set) => ({
   isLiveOpen: false,
   setIsLiveOpen: (val) => set({ isLiveOpen: val }),
   intelligenceProfile: {
+    agentName: "",
+    preferredName: "",
     hobbies: "",
+    interests: "",
     weakSubjects: "",
+    strongSubjects: "",
     targetGrade: "Grade 9 - A Pass",
-    vocalStyle: "interactive"
+    vocalStyle: "interactive",
+    energyLevel: "balanced",
+    correctionStyle: "kind-direct",
+    motivationStyle: "steady",
+    memoryPriorities: "",
+    boundaries: ""
   },
   setIntelligenceProfile: (profile) => set({ intelligenceProfile: profile })
 }));

@@ -161,6 +161,78 @@ html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,'Segoe 
 .btn-primary:hover{transform:translateY(-4px);transition:transform 180ms}
 .btn-social{flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.9);cursor:pointer}
 
+.gemini-auth{
+  background:#fff;
+}
+.gemini-auth::before{
+  content:"";
+  position:fixed;
+  inset:auto -10% -35% -10%;
+  height:55vh;
+  background:radial-gradient(circle at 50% 0%, rgba(66,133,244,.30), transparent 36%),
+    radial-gradient(circle at 35% 35%, rgba(155,114,203,.22), transparent 34%),
+    radial-gradient(circle at 65% 35%, rgba(217,101,112,.20), transparent 34%);
+  filter:blur(56px);
+  pointer-events:none;
+}
+.gemini-auth-card{
+  max-width:420px;
+  border-radius:28px;
+  background:#f8fafd;
+  border:1px solid #dadce0;
+  box-shadow:0 24px 80px rgba(60,64,67,.16);
+}
+.gemini-auth-card::before,
+.gemini-auth-card::after{display:none}
+.auth-logo-img{
+  width:72px;
+  height:72px;
+  object-fit:contain;
+  border-radius:18px;
+  background:white;
+  padding:10px;
+  box-shadow:0 10px 30px rgba(66,133,244,.14);
+}
+.gemini-auth-card .card-header h1{
+  font-size:24px;
+  color:#1f1f1f;
+}
+.gemini-auth-card .muted{color:#70757a}
+.gemini-auth-card .login-form input[type="email"],
+.gemini-auth-card .login-form input[type="password"],
+.gemini-auth-card .login-form input[type="text"]{
+  border-radius:16px;
+  background:white;
+  border:1px solid #dadce0;
+  min-height:48px;
+}
+.gemini-google{
+  min-height:48px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  font-weight:800;
+  color:#1f1f1f;
+}
+.google-dot{
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#4285f4,#34a853,#fbbc05,#ea4335);
+  color:white;
+  font-weight:900;
+}
+.gemini-auth-card .btn-primary{
+  border-radius:999px;
+  min-height:48px;
+  background:#1a73e8;
+}
+
 /* Divider */
 .divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:13px;margin-top:6px}
 .divider::before,.divider::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(7,16,36,0.04),transparent)}

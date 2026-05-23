@@ -3,70 +3,55 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Create account — Aura AI</title>
+  <title>Create account - Aura AI</title>
+  <link rel="icon" href="public/aura-icon.png" type="image/png">
   <link rel="stylesheet" href="login.css">
 </head>
 <body>
-  <main class="login-root" role="main" aria-labelledby="signupTitle">
-    <div class="background-layer" aria-hidden="true"></div>
-
-    <section class="login-card" role="region" aria-labelledby="signupTitle">
+  <main class="login-root gemini-auth" role="main" aria-labelledby="signupTitle">
+    <section class="login-card gemini-auth-card">
       <header class="card-header">
-        <div class="logo">G9</div>
-        <h1 id="signupTitle">Create account</h1>
-        <p class="muted">Join Aura AI — simple Grade 9 learning</p>
+        <img src="public/aura-logo.png" alt="Aura AI" class="auth-logo-img" />
+        <h1 id="signupTitle">Create your Aura account</h1>
+        <p class="muted">Sign up with Google, then Aura will build your unique profile.</p>
       </header>
 
       <form id="signupForm" class="login-form" novalidate>
         <label for="name" class="sr">Full name</label>
-        <input id="name" name="name" type="text" placeholder="Full name" required autocomplete="name" />
+        <input id="name" name="name" type="text" placeholder="Full name" autocomplete="name" />
 
         <label for="email" class="sr">Email</label>
-        <input id="email" name="email" type="email" placeholder="name@student.com" required autocomplete="email" />
+        <input id="email" name="email" type="email" placeholder="Email" autocomplete="email" />
 
         <label for="password" class="sr">Password</label>
-        <input id="password" name="password" type="password" placeholder="Create a password" required minlength="6" />
+        <input id="password" name="password" type="password" placeholder="Create a password" minlength="6" />
 
         <label for="confirm" class="sr">Confirm password</label>
-        <input id="confirm" name="confirm" type="password" placeholder="Confirm password" required minlength="6" />
+        <input id="confirm" name="confirm" type="password" placeholder="Confirm password" minlength="6" />
 
-        <div class="row between">
-          <label class="remember">
-            <input type="checkbox" id="terms" name="terms" required />
-            <span>I agree to the terms</span>
-          </label>
-          <a href="login.html?return=app.html" class="link">Already have an account?</a>
-        </div>
+        <label class="remember">
+          <input type="checkbox" id="terms" name="terms" checked />
+          <span>I agree to the terms</span>
+        </label>
+
+        <button type="button" class="btn-social gemini-google" data-provider="google">
+          <span class="google-dot">G</span>
+          <span>Continue with Google</span>
+        </button>
 
         <button type="submit" class="btn-primary">Create account</button>
 
-        <div class="divider"><span>or continue with</span></div>
-
-        <div class="socials" style="display:flex;gap:12px;justify-content:center;">
-          <button type="button" class="btn-social" data-provider="google" aria-label="Continue with Google" title="Continue with Google">
-            <!-- Google SVG -->
-            <svg width="18" height="18" viewBox="0 0 533.5 544.3" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="vertical-align:middle;margin-right:10px">
-              <path fill="#4285F4" d="M533.5 278.4c0-17.5-1.5-35.3-4.6-52.4H272v99.2h146.9c-6.4 34.8-25 64.3-53.4 84.1v69h86.2c50.5-46.5 82.8-115 82.8-199.9z"/>
-              <path fill="#34A853" d="M272 544.3c72.6 0 133.6-24.1 178-65.5l-86.2-69c-24.1 16.2-55 25.8-91.8 25.8-70.6 0-130.4-47.6-151.8-111.4h-89.6v69.9C74.9 483.2 167.9 544.3 272 544.3z"/>
-              <path fill="#FBBC05" d="M120.2 325.2c-9.6-28.7-9.6-59.5 0-88.2V167.1h-89.6C6.6 211.8 0 241.6 0 272s6.6 60.2 30.6 104.9l89.6-51.7z"/>
-              <path fill="#EA4335" d="M272 108.7c39 0 74.1 13.4 101.7 39.6l76.3-76.3C405.1 27.8 345.1 0 272 0 167.9 0 74.9 61.1 30.6 163.8l89.6 51.7C141.6 156.3 201.4 108.7 272 108.7z"/>
-            </svg>
-            <span>Google</span>
-          </button>
-        </div>
-
-        <p class="small muted">By creating an account you agree to our <a href="#">terms</a>. · <a href="index.html">Back to landing</a></p>
+        <p class="small muted">
+          Already have an account? <a href="login.html?return=app.html">Log in</a> · <a href="index.html">Back to landing</a>
+        </p>
       </form>
-
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     </section>
   </main>
 
-  <!-- Firebase SDK and initialization (same config as login.html) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
   <script src="firebase_runtime_config.js"></script>
-
   <script src="signup.js" defer></script>
 </body>
 </html>

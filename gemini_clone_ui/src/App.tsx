@@ -338,12 +338,28 @@ export default function App() {
             }
           }
         }
-        if (fileContext) {
+      if (fileContext) {
           text = `${text}\n${fileContext}`;
         }
       }
 
+      const store = useAppStore.getState();
+      let chatId = store.activeChatId;
+      if (!chatId) {
+        chatId = store.addChat("New Chat", text.slice(0, 72) || "Ask Aura anything...");
+      }
+      const compactTitle = text.replace(/\s+/g, " ").trim().slice(0, 46) || "New Chat";
+      store.updateChat(chatId, {
+        title: compactTitle,
+        preview: text.replace(/\s+/g, " ").trim().slice(0, 90) || "Aura conversation",
+        time: "Just now",
+      });
+
       const response = await askBackend(text);
+      useAppStore.getState().updateChat(chatId, {
+        preview: response.replace(/\s+/g, " ").trim().slice(0, 90) || "Aura replied",
+        time: "Just now",
+      });
       return {
         content: [{ type: "text", text: response }],
       };
@@ -565,7 +581,7 @@ export default function App() {
           {/* Main Content Area — switches between Chat, Study, Exam */}
           <div className="flex-1 min-h-0">
             {activeTab === "chats" || activeTab === "settings" ? (
-              <Gemini />
+              <Gemini key={activeChatId || "empty-chat"} />
             ) : activeTab === "study" ? (
               <StudyCenter />
             ) : activeTab === "exams" ? (

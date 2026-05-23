@@ -40,4 +40,22 @@ runNpm(["run", "build"]);
 fs.cpSync(auraDistDir, distDir, { recursive: true });
 fs.cpSync(path.join(repoRoot, "firebase_runtime_config.js"), path.join(distDir, "firebase_runtime_config.js"));
 
+fs.renameSync(path.join(distDir, "index.html"), path.join(distDir, "app.html"));
+[
+  "index.html",
+  "landing.html",
+  "landing.css",
+  "landing.js",
+  "login.html",
+  "login.css",
+  "login.js",
+  "signup.html",
+  "signup.js",
+  "auth.js",
+  "api.js",
+].forEach((file) => {
+  const source = path.join(repoRoot, file);
+  if (fs.existsSync(source)) fs.copyFileSync(source, path.join(distDir, file));
+});
+
 console.log("Netlify Aura UI bundle prepared at", distDir);

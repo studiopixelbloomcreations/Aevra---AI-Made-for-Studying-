@@ -101,9 +101,18 @@ export async function askBackend(message: string, history: any[] = []) {
       subject: store.subject,
       language: store.language,
       hobbies: store.intelligenceProfile.hobbies,
+      interests: store.intelligenceProfile.interests,
       weakSubjects: store.intelligenceProfile.weakSubjects,
+      strongSubjects: store.intelligenceProfile.strongSubjects,
       targetGrade: store.intelligenceProfile.targetGrade,
       vocalStyle: store.intelligenceProfile.vocalStyle,
+      agentName: store.intelligenceProfile.agentName,
+      preferredName: store.intelligenceProfile.preferredName,
+      energyLevel: store.intelligenceProfile.energyLevel,
+      correctionStyle: store.intelligenceProfile.correctionStyle,
+      motivationStyle: store.intelligenceProfile.motivationStyle,
+      memoryPriorities: store.intelligenceProfile.memoryPriorities,
+      boundaries: store.intelligenceProfile.boundaries,
     }).catch(() => null);
     
     // Task 5: Dynamic typing speed calculation based on input length

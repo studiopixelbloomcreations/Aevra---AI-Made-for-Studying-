@@ -94,10 +94,21 @@ export const Gemini: FC = () => {
   const [settingsTab, setSettingsTab] = useState<"general" | "voices" | "models" | "personalization">("general");
 
   // Form states inside components
-  const [hobbiesInput, setHobbiesInput] = useState("");
-  const [weakSubjectsInput, setWeakSubjectsInput] = useState("");
-  const [gradeInput, setGradeInput] = useState("Grade 9 - A Pass");
-  const [vocalStyleInput, setVocalStyleInput] = useState("interactive");
+  const [liveProfileInput, setLiveProfileInput] = useState({
+    agentName: "",
+    preferredName: "",
+    vocalStyle: "interactive",
+    energyLevel: "balanced",
+    correctionStyle: "kind-direct",
+    motivationStyle: "steady",
+    weakSubjects: "",
+    strongSubjects: "",
+    targetGrade: "Grade 9 - A Pass",
+    interests: "",
+    hobbies: "",
+    memoryPriorities: "",
+    boundaries: "",
+  });
   
   // Loading screen text cycle states
   const [loaderText, setLoaderText] = useState("Generating unique student intelligence signature...");
@@ -128,10 +139,7 @@ export const Gemini: FC = () => {
   const handlePersonalizeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIntelligenceProfile({
-      hobbies: hobbiesInput,
-      weakSubjects: weakSubjectsInput,
-      targetGrade: gradeInput,
-      vocalStyle: vocalStyleInput
+      ...liveProfileInput,
     });
     
     // Trigger loading sequence
@@ -525,64 +533,97 @@ export const Gemini: FC = () => {
               </button>
             </div>
 
-            <div className="space-y-4 max-h-[340px] overflow-y-auto pr-1">
-              
-              {/* Vocal Mentorship style */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1">
+              {[
+                ["agentName", "What should your Aura Live agent be called?", "Nova, Lumen, Aura One"],
+                ["preferredName", "What should the agent call you?", "Your preferred name"],
+                ["weakSubjects", "Where should it be extra patient?", "Algebra, chemistry equations, Sinhala reading"],
+                ["strongSubjects", "Where can it move faster?", "ICT, science, English speaking"],
+                ["interests", "What interests should it connect lessons to?", "Robotics, cricket, games, music"],
+                ["hobbies", "What hobbies should it remember?", "Coding, drawing, electronics"],
+                ["memoryPriorities", "What should it always remember over time?", "Goals, weak areas, family schedule"],
+                ["boundaries", "Any boundaries or things to avoid?", "No shouting, short answers at night"],
+              ].map(([key, label, placeholder]) => (
+                <div key={key} className="space-y-1.5">
+                  <label className="text-xs font-bold text-muted-foreground">{label}</label>
+                  <input
+                    type="text"
+                    required={key === "preferredName" || key === "weakSubjects"}
+                    placeholder={placeholder}
+                    value={(liveProfileInput as any)[key]}
+                    onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, [key]: e.target.value }))}
+                    className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-medium rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500 text-foreground"
+                  />
+                </div>
+              ))}
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-muted-foreground flex items-center gap-1">
                   <span>Vocal Mentorship Style</span>
                   <Info className="size-3 opacity-60" />
                 </label>
                 <select
-                  value={vocalStyleInput}
-                  onChange={(e) => setVocalStyleInput(e.target.value)}
+                  value={liveProfileInput.vocalStyle}
+                  onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, vocalStyle: e.target.value }))}
                   className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-semibold rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500"
                 >
-                  <option value="interactive">Interactive Storyteller (Great for understanding history/science)</option>
-                  <option value="strict">Strict Academic Mentor (High discipline homework review)</option>
-                  <option value="helper">Supportive Helper (Calm study companion)</option>
-                  <option value="gamer">Energetic Gamer Buddy (Relaxed peer-learning style)</option>
+                  <option value="interactive">Interactive Storyteller</option>
+                  <option value="strict">Strict Academic Mentor</option>
+                  <option value="helper">Supportive Helper</option>
+                  <option value="gamer">Energetic Peer Coach</option>
                 </select>
               </div>
 
-              {/* Weak Subject areas */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground">What are your weak subject areas?</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Science Chemistry equations, Algebra Geometry, Sinhala reading"
-                  value={weakSubjectsInput}
-                  onChange={(e) => setWeakSubjectsInput(e.target.value)}
-                  className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-medium rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500 text-foreground"
-                />
+                <label className="text-xs font-bold text-muted-foreground">Agent Energy</label>
+                <select
+                  value={liveProfileInput.energyLevel}
+                  onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, energyLevel: e.target.value }))}
+                  className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-semibold rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500"
+                >
+                  <option value="calm">Calm and steady</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="energetic">Energetic and hype</option>
+                </select>
               </div>
 
-              {/* Target study grade */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-muted-foreground">Correction Style</label>
+                <select
+                  value={liveProfileInput.correctionStyle}
+                  onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, correctionStyle: e.target.value }))}
+                  className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-semibold rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500"
+                >
+                  <option value="kind-direct">Kind but direct</option>
+                  <option value="strict">Strict and precise</option>
+                  <option value="gentle">Gentle hints first</option>
+                </select>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-muted-foreground">Target Learning Goal</label>
                 <select
-                  value={gradeInput}
-                  onChange={(e) => setGradeInput(e.target.value)}
+                  value={liveProfileInput.targetGrade}
+                  onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, targetGrade: e.target.value }))}
                   className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-semibold rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500"
                 >
                   <option value="Grade 9 - A Pass">Grade 9 - Standard A Pass target</option>
-                  <option value="Grade 9 - Excellence">Grade 9 - District Rank/Excellence target</option>
+                  <option value="Grade 9 - Excellence">Grade 9 - Excellence target</option>
                   <option value="Grade 10 Prep">Advanced Grade 10 Preparation</option>
                 </select>
               </div>
 
-              {/* Hobbies & Hopes */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-muted-foreground">Your Hobbies & Interests</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Building electronic kits, coding, playing video games, cricket"
-                  value={hobbiesInput}
-                  onChange={(e) => setHobbiesInput(e.target.value)}
-                  className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-medium rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500 text-foreground"
-                />
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-xs font-bold text-muted-foreground">Motivation Style</label>
+                <select
+                  value={liveProfileInput.motivationStyle}
+                  onChange={(e) => setLiveProfileInput((prev) => ({ ...prev, motivationStyle: e.target.value }))}
+                  className="w-full bg-[#f0f4f9] dark:bg-[#0f0f10] text-xs font-semibold rounded-xl border border-[#dadce0]/50 dark:border-[#2d2f31]/50 p-2.5 outline-none focus:border-blue-500"
+                >
+                  <option value="steady">Steady confidence building</option>
+                  <option value="challenge">Challenge me hard</option>
+                  <option value="celebrate">Celebrate small wins</option>
+                </select>
               </div>
             </div>
 
