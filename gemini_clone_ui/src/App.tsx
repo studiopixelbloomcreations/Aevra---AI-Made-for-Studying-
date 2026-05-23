@@ -6,7 +6,7 @@ import { StudyCenter } from './components/study-center'
 import { ExamCenter } from './components/exam-center'
 import { AuraLogo } from './components/icons/aura-logo'
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react"
-import { askBackend, API_BASE_URL } from './lib/api'
+import { askBackend, API_BASE_URL, getAuraIdentity } from './lib/api'
 import { useAppStore } from './store/useAppStore'
 import {
   Sparkles,
@@ -44,6 +44,8 @@ export default function App() {
     activeTab,
     setActiveTab,
   } = useAppStore()
+  const identity = getAuraIdentity()
+  const profileInitial = (identity.name || identity.email || "Aura").slice(0, 1).toUpperCase()
 
   // Find active chat details
   const activeChat = chats.find(c => c.id === activeChatId) || { id: "New Chat", title: "New Chat", preview: "", time: "" }
@@ -204,9 +206,9 @@ export default function App() {
               {/* Profile Avatar trigger */}
               <button
                 onClick={() => setIsProfileOpen(true)}
-                className="size-8.5 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white text-[13px] font-bold shadow-md shadow-purple-500/10 hover:opacity-90 active:scale-95 transition-all"
+                className="h-9 w-9 aspect-square shrink-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white text-[13px] font-bold shadow-md shadow-purple-500/10 hover:opacity-90 active:scale-95 transition-all overflow-hidden"
               >
-                A
+                {identity.avatar ? <img src={identity.avatar} alt="" className="h-full w-full object-cover" /> : profileInitial}
               </button>
             </div>
           </header>
@@ -234,12 +236,12 @@ export default function App() {
             
             {/* Header: User Email and X close */}
             <div className="flex justify-between items-center text-[#444746] dark:text-[#c4c7c5]">
-              <span className="text-[12.5px] font-medium tracking-wide">studiopixelbloomcreations@gmail.com</span>
+              <span className="text-[12.5px] font-medium tracking-wide">{identity.email}</span>
               <button
                 onClick={() => setIsProfileOpen(false)}
                 className="size-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-[#444746] dark:text-[#c4c7c5]"
               >
-                <X className="size-4.5" />
+                <X className="h-[18px] w-[18px]" />
               </button>
             </div>
 
@@ -247,20 +249,20 @@ export default function App() {
             <div className="flex flex-col items-center text-center space-y-2.5">
               {/* Large circular avatar with camera change icon */}
               <div className="relative">
-                <div className="size-20 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-purple-500/20">
-                  A
+                <div className="h-20 w-20 aspect-square rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-purple-500/20 overflow-hidden">
+                  {identity.avatar ? <img src={identity.avatar} alt="" className="h-full w-full object-cover" /> : profileInitial}
                 </div>
                 <button
-                  className="absolute bottom-0 right-0 size-6.5 bg-white dark:bg-[#1e1f20] border border-[#dadce0]/70 dark:border-[#2d2f31]/70 rounded-full flex items-center justify-center text-[#444746] dark:text-[#c4c7c5] shadow-md hover:bg-[#f1f3f4]"
+                  className="absolute bottom-0 right-0 h-[26px] w-[26px] aspect-square bg-white dark:bg-[#1e1f20] border border-[#dadce0]/70 dark:border-[#2d2f31]/70 rounded-full flex items-center justify-center text-[#444746] dark:text-[#c4c7c5] shadow-md hover:bg-[#f1f3f4]"
                   title="Change profile photo"
                 >
-                  <Camera className="size-3.5" />
+                  <Camera className="h-3.5 w-3.5" />
                 </button>
               </div>
 
               {/* Greeting */}
               <h3 className="text-[17px] font-medium text-[#1f1f1f] dark:text-[#e3e3e3]">
-                Hi, Studio Pixel!
+                Hi, {identity.name || "Student"}!
               </h3>
 
               {/* Manage Aura Account button */}

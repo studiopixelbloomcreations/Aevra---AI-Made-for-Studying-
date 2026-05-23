@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { askBackend } from "../lib/api";
+import { askBackend, createRealtimeSession, ensurePersonalIntelligenceProfile } from "../lib/api";
 import {
   VideoOff,
   ScreenShare,
@@ -18,12 +18,16 @@ export const AuraLive: React.FC = () => {
   const [transcript, setTranscript] = useState("");
   const [aiResponseText, setAiResponseText] = useState("");
   const [liveStatus, setLiveStatus] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
+  const [connectorStatus, setConnectorStatus] = useState("Personal Intelligence ready");
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const recognitionRef = useRef<any>(null);
+  const realtimePeerRef = useRef<RTCPeerConnection | null>(null);
+  const realtimeChannelRef = useRef<RTCDataChannel | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Clean and speak AI response text
   const speakText = (text: string) => {
@@ -91,6 +95,7 @@ export const AuraLive: React.FC = () => {
         }
       }
       setTranscript(finalTranscript || interimTranscript);
+      rec._latestTranscript = finalTranscript || interimTranscript;
     };
 
     rec.onerror = (e: any) => {
@@ -125,6 +130,101 @@ export const AuraLive: React.FC = () => {
 
     recognitionRef.current = rec;
     rec.start();
+  };
+
+  const startRealtimeSession = async (stream: MediaStream) => {
+    try {
+      setConnectorStatus("Syncing Personal Intelligence profile...");
+      await ensurePersonalIntelligenceProfile({
+        subject,
+        language,
+        mode: "aura_live",
+        vocalStyle: store.intelligenceProfile.vocalStyle,
+        weakSubjects: store.intelligenceProfile.weakSubjects,
+        targetGrade: store.intelligenceProfile.targetGrade,
+      });
+
+      setConnectorStatus("Connecting realtime voice engine...");
+      const session = await createRealtimeSession();
+      const secret = String(session?.client_secret?.value || session?.client_secret?.secret || session?.client_secret || "").trim();
+      if (!session?.ok || !secret) {
+        setConnectorStatus(session?.error || "Realtime unavailable; using browser speech fallback");
+        return false;
+      }
+
+      const pc = new RTCPeerConnection();
+      realtimePeerRef.current = pc;
+
+      const remoteAudio = new Audio();
+      remoteAudio.autoplay = true;
+      remoteAudioRef.current = remoteAudio;
+      pc.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      stream.getAudioTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const channel = pc.createDataChannel("oai-events");
+      realtimeChannelRef.current = channel;
+      channel.onopen = () => {
+        setConnectorStatus("Realtime Personal Intelligence connected");
+        setLiveStatus("listening");
+        channel.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            turn_detection: { type: "server_vad" },
+            instructions: `You are Aura AI's live personal intelligence voice. Help a Grade 9 student in ${language}. Active subject: ${subject}. Keep answers natural, accurate, and concise.`,
+          },
+        }));
+      };
+      channel.onmessage = (event) => {
+        const data = JSON.parse(String(event.data || "{}"));
+        if (data.type === "input_audio_buffer.speech_started") {
+          setTranscript("Listening...");
+          setAiResponseText("");
+          setLiveStatus("listening");
+        }
+        if (data.type === "input_audio_buffer.speech_stopped") {
+          setLiveStatus("processing");
+        }
+        if (data.type === "conversation.item.input_audio_transcription.completed" && data.transcript) {
+          setTranscript(String(data.transcript));
+        }
+        if ((data.type === "response.audio_transcript.delta" || data.type === "response.text.delta") && data.delta) {
+          setLiveStatus("speaking");
+          setAiResponseText((prev) => `${prev}${data.delta}`);
+        }
+        if (data.type === "response.done") {
+          setLiveStatus("listening");
+        }
+        if (data.type === "error") {
+          setConnectorStatus(data.error?.message || "Realtime voice error");
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const model = encodeURIComponent(String(session.model || "gpt-realtime"));
+      const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/sdp",
+        },
+        body: offer.sdp || "",
+      });
+      if (!sdpResponse.ok) throw new Error(`Realtime SDP failed (${sdpResponse.status})`);
+      await pc.setRemoteDescription({ type: "answer", sdp: await sdpResponse.text() });
+      return true;
+    } catch (error) {
+      console.warn("Realtime connection failed; falling back to browser speech.", error);
+      setConnectorStatus("Realtime unavailable; using browser speech fallback");
+      realtimeChannelRef.current?.close();
+      realtimePeerRef.current?.close();
+      realtimeChannelRef.current = null;
+      realtimePeerRef.current = null;
+      return false;
+    }
   };
 
   // Keep track of latest transcript in ref to avoid closure issues on recognition end
@@ -171,7 +271,8 @@ export const AuraLive: React.FC = () => {
       };
 
       updateVolume();
-      startSpeechRecognition();
+      const realtimeConnected = await startRealtimeSession(stream);
+      if (!realtimeConnected) startSpeechRecognition();
     } catch (err) {
       console.warn("Microphone access denied or not available.", err);
       // Fallback: Simulate random voice fluctuations so it still looks incredibly premium and reactive!
@@ -196,6 +297,18 @@ export const AuraLive: React.FC = () => {
       }
       recognitionRef.current = null;
     }
+    if (realtimeChannelRef.current) {
+      realtimeChannelRef.current.close();
+      realtimeChannelRef.current = null;
+    }
+    if (realtimePeerRef.current) {
+      realtimePeerRef.current.close();
+      realtimePeerRef.current = null;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+      remoteAudioRef.current = null;
+    }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
@@ -211,6 +324,7 @@ export const AuraLive: React.FC = () => {
     setIsMicActive(false);
     setVolume(0);
     setLiveStatus("idle");
+    setConnectorStatus("Personal Intelligence ready");
   };
 
   const toggleMic = () => {
@@ -269,7 +383,7 @@ export const AuraLive: React.FC = () => {
         {/* Video off camera block icon */}
         <div className="flex items-center justify-end w-[120px]">
           <div className="size-10 rounded-full bg-white/5 backdrop-blur-md flex items-center justify-center border border-white/5 text-white/70">
-            <VideoOff className="size-4.5" />
+            <VideoOff className="h-[18px] w-[18px]" />
           </div>
         </div>
       </div>
@@ -281,6 +395,7 @@ export const AuraLive: React.FC = () => {
         <div className="absolute top-6 space-y-1.5 opacity-90 transition-all">
           <h2 className="text-sm font-semibold tracking-wide text-blue-400 uppercase">Aura Personal Voice Agent</h2>
           <p className="text-[11.5px] font-medium text-white/50">Active Subject: {subject} | Language: {language}</p>
+          <p className="text-[11px] font-medium text-white/35">{connectorStatus}</p>
         </div>
 
         {/* Voice Status & Text Content Area */}
@@ -382,7 +497,7 @@ export const AuraLive: React.FC = () => {
           }`}
           title={isMicActive ? "Mute Microphone" : "Unmute Microphone"}
         >
-          {isMicActive ? <Mic className="size-5.5" /> : <MicOff className="size-5.5" />}
+          {isMicActive ? <Mic className="h-[22px] w-[22px]" /> : <MicOff className="h-[22px] w-[22px]" />}
         </button>
 
         {/* Red End Call button to exit live mode */}

@@ -645,7 +645,7 @@ const SuggestionChip: FC<{
   return (
     <button
       type="button"
-      className="flex items-center gap-2 rounded-full bg-white dark:bg-[#1e1f20] px-4.5 py-2 text-[#444746] text-xs font-semibold shadow-sm hover:bg-[#f1f3f4] dark:text-[#c4c7c5] dark:hover:bg-[#2b2c2d] border border-[#dadce0]/70 dark:border-[#2d2f31] transition-all hover:scale-[1.01] active:scale-[0.99]"
+      className="flex items-center gap-2 rounded-full bg-white dark:bg-[#1e1f20] px-[18px] py-2 text-[#444746] text-xs font-semibold shadow-sm hover:bg-[#f1f3f4] dark:text-[#c4c7c5] dark:hover:bg-[#2b2c2d] border border-[#dadce0]/70 dark:border-[#2d2f31] transition-all hover:scale-[1.01] active:scale-[0.99]"
     >
       {children}
     </button>
@@ -686,7 +686,7 @@ const Composer: FC = () => {
 
         <div className="flex w-full items-center text-[#444746] dark:text-[#c4c7c5] pt-2.5 border-t border-[#dadce0]/25 dark:border-[#2d2f31]/25">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <ComposerPrimitive.AddAttachment className="flex size-9.5 items-center justify-center rounded-full transition-all hover:bg-[#444746]/8 active:scale-[0.96] dark:hover:bg-[#c4c7c5]/8">
+            <ComposerPrimitive.AddAttachment className="flex h-[38px] w-[38px] aspect-square items-center justify-center rounded-full transition-all hover:bg-[#444746]/8 active:scale-[0.96] dark:hover:bg-[#c4c7c5]/8">
               <PlusIcon width={20} height={20} />
             </ComposerPrimitive.AddAttachment>
             <span className="text-xs text-muted-foreground opacity-60 font-semibold px-1">Tools</span>
@@ -699,7 +699,7 @@ const Composer: FC = () => {
               <ChevronDown className="size-3.5" />
             </button>
             
-            <div className="relative size-9.5 shrink-0">
+            <div className="relative h-[38px] w-[38px] aspect-square shrink-0">
               <button
                 type="button"
                 className="absolute inset-0 flex items-center justify-center rounded-full transition-all duration-300 ease-out hover:bg-[#444746]/8 group-data-[empty=false]/composer:scale-0 group-data-[running=true]/composer:scale-0 group-data-[empty=false]/composer:opacity-0 group-data-[running=true]/composer:opacity-0 dark:hover:bg-[#c4c7c5]/8"
@@ -737,7 +737,7 @@ const ChatMessage: FC = () => {
               <Pencil1Icon width={13} height={13} />
             </ActionBarPrimitive.Edit>
           </ActionBarPrimitive.Root>
-          <div className="max-w-[78%] rounded-[20px] rounded-tr-[4px] bg-[#f0f4f9] px-4.5 py-3 text-sm text-[#1f1f1f] dark:bg-[#282a2c] dark:text-[#e3e3e3] shadow-sm leading-relaxed">
+          <div className="max-w-[78%] rounded-[20px] rounded-tr-[4px] bg-[#f0f4f9] px-[18px] py-3 text-sm text-[#1f1f1f] dark:bg-[#282a2c] dark:text-[#e3e3e3] shadow-sm leading-relaxed break-words">
             <div className="prose prose-sm dark:prose-invert wrap-break-word">
               <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
             </div>
@@ -747,7 +747,7 @@ const ChatMessage: FC = () => {
 
       <AuiIf condition={(s) => s.message.role === "assistant"}>
         <div className="flex items-start gap-4">
-          <div className="mt-1 size-7 rounded-full bg-gradient-to-tr from-[#4285f4] to-[#9b72cb] flex items-center justify-center text-white shadow-sm shrink-0 overflow-hidden">
+          <div className="mt-1 h-7 w-7 aspect-square rounded-full bg-gradient-to-tr from-[#4285f4] to-[#9b72cb] flex items-center justify-center text-white shadow-sm shrink-0 overflow-hidden">
             <AuraLogo className="size-5" state="responding" />
           </div>
           <div className="min-w-0 flex-1">

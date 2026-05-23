@@ -126,18 +126,9 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  activeChatId: "3", // default to Exact Image Prompt For AI
+  activeChatId: "",
   setActiveChatId: (id) => set({ activeChatId: id }),
-  chats: [
-    { id: "1", title: "Temples Near Waba Campus", preview: "Temples in the area...", time: "Today" },
-    { id: "2", title: "Project Ideas for User", preview: "AI projects for student...", time: "Today" },
-    { id: "3", title: "Exact Image Prompt For AI", preview: "alight give me picture perfect identical prompt...", time: "Today" },
-    { id: "4", title: "Professional broadcast lower third, tr...", preview: "Lower thirds styled graphics...", time: "Yesterday" },
-    { id: "5", title: "3D golden text \"AWARD CERAMONY ...", preview: "3D rendering styles...", time: "Yesterday" },
-    { id: "6", title: "luxury golden award trophy slightly le...", preview: "Trophy descriptions...", time: "Yesterday" },
-    { id: "7", title: "App Development for Award Ceremony", preview: "Designing react app...", time: "2 days ago" },
-    { id: "8", title: "Peaceful ocean horizon at sunset, wa...", preview: "Scenic layouts...", time: "2 days ago" },
-  ],
+  chats: [],
   addChat: (title, preview = "No messages yet") =>
     set((state) => {
       const id = Date.now().toString();

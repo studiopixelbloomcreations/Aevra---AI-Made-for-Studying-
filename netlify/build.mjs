@@ -10,7 +10,8 @@ const auraDistDir = path.join(auraUiDir, "dist");
 
 function runNpm(args) {
   if (process.platform === "win32") {
-    execFileSync("cmd.exe", ["/d", "/s", "/c", `npm ${args.join(" ")}`], {
+    const npmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+    execFileSync("node", [npmCli, ...args], {
       cwd: auraUiDir,
       stdio: "inherit",
     });

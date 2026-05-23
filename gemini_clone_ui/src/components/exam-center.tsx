@@ -20,6 +20,7 @@ interface ExamQuestion {
   type: string;
   choices?: string[];
   answer?: string;
+  explanation?: string;
 }
 
 interface MasteryStep {
@@ -37,6 +38,8 @@ export const ExamCenter: React.FC = () => {
   const [sessionId, setSessionId] = useState("");
 
   // Testing phase
+  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<ExamQuestion | null>(null);
   const [userAnswer, setUserAnswer] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -73,8 +76,7 @@ export const ExamCenter: React.FC = () => {
       const data = await res.json();
       setSessionId(data.session_id);
 
-      // Fetch papers
-      await fetch(`${API_BASE_URL}/exam-mode/fetch-papers`, {
+      const papersRes = await fetch(`${API_BASE_URL}/exam-mode/fetch-papers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,49 +85,49 @@ export const ExamCenter: React.FC = () => {
           term: selectedTerm,
         }),
       });
+      if (!papersRes.ok) throw new Error("Question bank is not available");
 
-      // Get first question
-      await fetchNextQuestion(data.session_id);
+      const papersData = await papersRes.json();
+      const rawQuestions = papersData.data?.questions || papersData.questions || [];
+      const normalizedQuestions: ExamQuestion[] = rawQuestions
+        .map((question: any, index: number) => ({
+          id: String(question.id || `${data.session_id}-${index + 1}`),
+          text: String(question.question || question.text || "").trim(),
+          type: Array.isArray(question.options) && question.options.length > 0 ? "mcq" : question.type || "short_answer",
+          choices: Array.isArray(question.options) ? question.options : question.choices,
+          answer: question.correctAnswer || question.correct_answer || question.answer,
+          explanation: question.explanation,
+        }))
+        .filter((question: ExamQuestion) => question.text.length > 0);
+
+      if (normalizedQuestions.length === 0) throw new Error("No questions returned for this subject and term");
+
+      setQuestions(normalizedQuestions);
+      setQuestionIndex(0);
+      setCurrentQuestion(normalizedQuestions[0]!);
+      setLastResult(null);
+      setUserAnswer("");
       setPhase("testing");
     } catch (err: any) {
       console.error("Exam start error:", err);
-      // Fallback: use local mock questions
-      setSessionId("local-" + Date.now());
-      setCurrentQuestion({
-        id: "mock-1",
-        text: getMockQuestion(selectedSubject),
-        type: "short_answer",
-        answer: getMockAnswer(selectedSubject),
-      });
-      setPhase("testing");
+      setError(err?.message || "Could not connect to Aura Exam Mode");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchNextQuestion = async (sid: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/exam-mode/ask-question`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sid }),
-      });
-      if (!res.ok) throw new Error("No more questions");
-      const data = await res.json();
-      setCurrentQuestion(data.question);
-      setLastResult(null);
-      setUserAnswer("");
-    } catch {
-      // Fallback to mock
-      setCurrentQuestion({
-        id: "mock-" + Date.now(),
-        text: getMockQuestion(selectedSubject),
-        type: "short_answer",
-        answer: getMockAnswer(selectedSubject),
-      });
-      setLastResult(null);
-      setUserAnswer("");
+  const fetchNextQuestion = () => {
+    if (questions.length === 0) {
+      setError("Question bank is empty. Start a new exam session.");
+      return;
     }
+
+    const nextIndex = (questionIndex + 1) % questions.length;
+    setQuestionIndex(nextIndex);
+    setCurrentQuestion(questions[nextIndex]!);
+    setLastResult(null);
+    setUserAnswer("");
+    setError("");
   };
 
   const submitAnswer = async () => {
@@ -133,59 +135,41 @@ export const ExamCenter: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/exam-mode/evaluate`, {
+      const res = await fetch(`${API_BASE_URL}/exam-mode/ask-question`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
-          question_id: currentQuestion.id,
+          question: currentQuestion,
+          userAnswer,
           user_answer: userAnswer,
         }),
       });
 
       if (!res.ok) throw new Error("Evaluation failed");
       const data = await res.json();
+      const result = data.data || data;
+      const correct = Boolean(result.isCorrect ?? result.correct);
 
       setLastResult({
-        correct: data.correct,
-        explanation: data.explanation,
-        masterySteps: data.mastery_steps,
+        correct,
+        explanation: result.feedback || result.explanation || currentQuestion.explanation,
+        masterySteps: result.masterySteps || result.mastery_steps,
       });
 
       setTotalAnswered((p) => p + 1);
-      if (data.correct) setTotalCorrect((p) => p + 1);
-      updateMastery(selectedSubject, data.correct);
-    } catch {
-      // Fallback: simple local check
-      const isCorrect =
-        currentQuestion.answer
-          ? userAnswer.trim().toLowerCase().includes(currentQuestion.answer.toLowerCase().substring(0, 8))
-          : Math.random() > 0.4;
-
-      setLastResult({
-        correct: isCorrect,
-        explanation: isCorrect
-          ? "Great job! Your answer demonstrates solid understanding."
-          : `The correct answer is: ${currentQuestion.answer || "See mastery steps below."}`,
-        masterySteps: isCorrect
-          ? undefined
-          : [
-              { title: "Step 1: Understand the concept", content: "Review the core definition and formula from your notes." },
-              { title: "Step 2: Apply the formula", content: "Break the problem into smaller parts and substitute known values." },
-              { title: "Step 3: Verify your work", content: "Re-read the question and ensure your final answer matches the requirement." },
-            ],
-      });
-
-      setTotalAnswered((p) => p + 1);
-      if (isCorrect) setTotalCorrect((p) => p + 1);
-      updateMastery(selectedSubject, isCorrect);
+      if (correct) setTotalCorrect((p) => p + 1);
+      updateMastery(selectedSubject, correct);
+    } catch (err: any) {
+      console.error("Exam evaluation error:", err);
+      setError(err?.message || "Aura could not evaluate this answer");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleNextQuestion = () => {
-    fetchNextQuestion(sessionId);
+    fetchNextQuestion();
   };
 
   const accuracy = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
@@ -457,7 +441,10 @@ export const ExamCenter: React.FC = () => {
                   setTotalCorrect(0);
                   setLastResult(null);
                   setCurrentQuestion(null);
+                  setQuestions([]);
+                  setQuestionIndex(0);
                   setUserAnswer("");
+                  setError("");
                 }}
                 className="h-8 px-4 rounded-xl border border-black/10 dark:border-white/10 text-xs font-bold hover:bg-black/5 dark:hover:bg-white/5 transition-all active:scale-95"
               >
@@ -470,48 +457,3 @@ export const ExamCenter: React.FC = () => {
     </div>
   );
 };
-
-// Fallback mock question generators
-function getMockQuestion(subject: string): string {
-  const questions: Record<string, string[]> = {
-    Maths: [
-      "Solve for x: 2x + 5 = 17",
-      "Find the area of a triangle with base 10cm and height 6cm.",
-      "What is the value of √144?",
-      "Simplify: 3(x + 4) - 2(x - 1)",
-    ],
-    Science: [
-      "What is the chemical formula for water?",
-      "State Newton's Second Law of Motion.",
-      "What is photosynthesis?",
-      "Name the three states of matter.",
-    ],
-    English: [
-      "Convert to passive voice: 'The teacher teaches the students.'",
-      "What is a simile? Give an example.",
-      "Identify the noun in: 'The cat sat on the mat.'",
-    ],
-    History: [
-      "Who was the last king of the Kandyan Kingdom?",
-      "When did Sri Lanka gain independence?",
-      "Name two ancient irrigation tanks of Sri Lanka.",
-    ],
-    Sinhala: [
-      "නාම පද යනු මොනවාද? උදාහරණ 3ක් දෙන්න.",
-      "ක්‍රියා පද වර්ග 2ක් නම් කරන්න.",
-    ],
-  };
-  const pool = questions[subject] || questions["Maths"]!;
-  return pool[Math.floor(Math.random() * pool.length)]!;
-}
-
-function getMockAnswer(subject: string): string {
-  const answers: Record<string, string> = {
-    Maths: "x = 6",
-    Science: "H2O",
-    English: "The students are taught by the teacher.",
-    History: "Sri Vikrama Rajasinha",
-    Sinhala: "නාම පද යනු පුද්ගලයින්, ස්ථාන, දේවල් හෝ අදහස් නම් කරන වචන වේ.",
-  };
-  return answers[subject] || "6";
-}
