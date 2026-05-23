@@ -20,12 +20,20 @@
     function setAvatarPhoto(url){
       if(!accountAvatarBox) return;
       if(url){
-        accountAvatarBox.textContent = '';
-        accountAvatarBox.style.backgroundImage = 'url("' + url + '")';
-        accountAvatarBox.style.backgroundSize = 'cover';
-        accountAvatarBox.style.backgroundPosition = 'center';
+        accountAvatarBox.innerHTML = '<img alt="" src="' + String(url).replace(/"/g, '&quot;') + '">';
       } else {
-        accountAvatarBox.style.backgroundImage = '';
+        accountAvatarBox.innerHTML = '<i data-lucide="graduation-cap"></i>';
+      }
+    }
+
+    function setHeaderPhoto(user){
+      if(!headerUserPillIcon) return;
+      const url = user && user.photoURL ? String(user.photoURL) : '';
+      if(url){
+        headerUserPillIcon.innerHTML = '<img class="profile-pill-photo" alt="" src="' + url.replace(/"/g, '&quot;') + '">';
+      } else {
+        const initial = String((user && (user.name || user.email)) || 'A').trim().charAt(0).toUpperCase() || 'A';
+        headerUserPillIcon.textContent = initial;
       }
     }
 
@@ -44,12 +52,14 @@
       }
 
       if(headerUserPillText) headerUserPillText.textContent = name ? name.split(' ')[0] : 'Account';
-      if(headerUserPillIcon){
+      if(false && headerUserPillIcon){
         // keep emoji if no photo; photo is applied only on account page
         if(!user || !user.photoURL) headerUserPillIcon.textContent = '🎓';
       }
 
+      setHeaderPhoto(user);
       setAvatarPhoto(user && user.photoURL);
+      try { if(window.lucide && window.lucide.createIcons) window.lucide.createIcons(); } catch (e) {}
     }
 
     async function goToLoginForSwitch(){
@@ -149,12 +159,9 @@
         nameEl.textContent = nm;
         emailEl.textContent = em;
         if(u && u.photoURL){
-          avatar.textContent = '';
-          avatar.style.backgroundImage = 'url("' + u.photoURL + '")';
-          avatar.style.backgroundSize = 'cover';
-          avatar.style.backgroundPosition = 'center';
+          avatar.innerHTML = '<img alt="" src="' + String(u.photoURL).replace(/"/g, '&quot;') + '">';
         } else {
-          avatar.style.backgroundImage = '';
+          avatar.innerHTML = '';
           avatar.textContent = '🎓';
         }
       }

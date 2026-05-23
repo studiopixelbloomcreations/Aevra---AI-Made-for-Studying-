@@ -28,23 +28,20 @@
       }
     }
 
-    async function ensurePuterReady(interactive){
-      if(window.__VIS_TEST_USE_MOCK || navigator.onLine === false) return;
-      if(!window.puter || !window.puter.ai) throw new Error('PUTER_NOT_LOADED');
-      if(!window.puter.auth || !window.puter.auth.isSignedIn || !window.puter.auth.signIn) return;
-      let signed = false;
-      try { signed = !!(await window.puter.auth.isSignedIn()); } catch (e) {}
-      if(!signed && interactive){
-        await window.puter.auth.signIn({ attempt_temp_user_creation: true });
-      }
-    }
-
-    function extractPuterText(resp){
-      if(!resp) return '';
-      if(typeof resp === 'string') return resp.trim();
-      if(resp.message && typeof resp.message.content === 'string') return String(resp.message.content).trim();
-      if(typeof resp.content === 'string') return String(resp.content).trim();
-      return '';
+    function getAuthIdentity(){
+      try {
+        const user = window.Auth && window.Auth.getUser ? window.Auth.getUser() : null;
+        if(user && (user.uid || user.email)){
+          return {
+            user_id: String(user.uid || user.email || '').trim(),
+            email: String(user.email || '').trim(),
+            name: String(user.name || '').trim(),
+            avatar: String(user.photoURL || '').trim()
+          };
+        }
+      } catch (e) {}
+      const email = String(localStorage.getItem('g9_email') || 'guest@student.com').trim();
+      return { user_id: email, email, name: '', avatar: '' };
     }
 
     async function sendMessage(){
@@ -68,8 +65,8 @@
       const langTag = state.language==='Sinhala' ? '[සිංහල]' : '[English]';
       const userText = langTag + ' ' + text;
 
-      // Remember last-known email for backend progress sync
-      try { localStorage.setItem('g9_email', 'guest@student.com'); } catch (e) {}
+      const identity = getAuthIdentity();
+      try { if(identity.email) localStorage.setItem('g9_email', identity.email); } catch (e) {}
 
       // Points/session tracking hooks
       emit('g9:chat_context', { chatId: state.active, subject: state.subject });
@@ -96,16 +93,31 @@
         : [];
 
       try {
-        await ensurePuterReady(true);
-        const systemPrompt =
-          'You are Aura AI, a helpful study tutor for Grade 9 students. ' +
-          'Keep answers accurate, clear, and practical. ' +
-          'Current subject: ' + state.subject + '. ' +
-          'Respond in ' + state.language + '.';
-        const mainModel = getMainModel();
-        const puterResp = await window.puter.ai.chat([{ role: 'system', content: systemPrompt }].concat(history), { model: mainModel });
+        const readyProfile = (() => {
+          try { return JSON.parse(localStorage.getItem('aura_onboarding_ready:' + identity.user_id) || '{}'); } catch (e) { return {}; }
+        })();
+        const payload = {
+          message: text,
+          history,
+          language: state.language,
+          subject: state.subject,
+          model: getMainModel(),
+          title: 'Aura AI',
+          user_id: identity.user_id,
+          email: identity.email,
+          name: identity.name,
+          avatar: identity.avatar,
+          identity,
+          unique_id: readyProfile.unique_id || '',
+          profile_file: readyProfile.profile_file || ''
+        };
+        const res = await (window.Api && window.Api.apiFetch
+          ? window.Api.apiFetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+          : fetch('/personal-intelligence/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }));
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok) throw new Error(data && data.error ? data.error : 'HTTP_' + res.status);
         const lastAi = [...chat.messages].reverse().find(m=>m.role==='ai');
-        const answer = extractPuterText(puterResp);
+        const answer = String(data && data.answer || '').trim();
 
         if(!answer){
           throw new Error('INVALID_RESPONSE');
@@ -118,6 +130,9 @@
 
         // Points/session tracking hooks
         emit('g9:ai_response', { chatId: state.active, subject: state.subject, text: answer });
+        try {
+          if(window.AuraHarmonySystem && data) window.AuraHarmonySystem.ingest(data);
+        } catch (e) {}
 
         renderActiveChat();
         saveChats();

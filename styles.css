@@ -2647,10 +2647,27 @@ body {
 
 .profile-pill-icon {
   font-size: 16px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  color: #fff;
+  flex: 0 0 auto;
 }
 
 .profile-pill-text {
   line-height: 1;
+}
+
+.profile-pill-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .messages {
@@ -3474,6 +3491,133 @@ body {
   justify-content: center;
   font-size: 32px;
   box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+  overflow: hidden;
+}
+
+.avatar-gradient img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.onboarding-lock .app {
+  visibility: hidden;
+}
+
+.onboarding-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: radial-gradient(circle at top left, rgba(6, 182, 212, 0.22), transparent 34%),
+    rgba(6, 10, 24, 0.84);
+  backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 240ms ease, visibility 240ms ease;
+}
+
+.onboarding-gate.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.onboarding-panel {
+  width: min(680px, 100%);
+  max-height: min(760px, 92vh);
+  overflow: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(18, 24, 44, 0.96), rgba(10, 15, 31, 0.96));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  padding: 28px;
+}
+
+.onboarding-kicker {
+  color: var(--accent1);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  margin-bottom: 8px;
+}
+
+.onboarding-panel h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.onboarding-copy {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.onboarding-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.onboarding-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.onboarding-form input,
+.onboarding-form select {
+  min-height: 42px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  padding: 0 12px;
+}
+
+.onboarding-submit {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.onboarding-status {
+  min-height: 28px;
+  margin-top: 16px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  border-top-color: var(--accent1);
+  animation: onboarding-spin 760ms linear infinite;
+}
+
+@keyframes onboarding-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 720px) {
+  .onboarding-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .account-info {
