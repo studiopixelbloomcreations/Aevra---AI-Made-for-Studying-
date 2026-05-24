@@ -118,8 +118,8 @@ class SceneAnalyzer {
         throw new Error('Unsupported image data type for scene analysis. Please provide ImageData, HTMLImageElement, HTMLVideoElement, or HTMLCanvasElement.');
       }
 
-      // Run the model prediction
-      const predictions = await model.predict(tensor).data();
+// Run the model prediction
+       const predictions = await this.model.predict(tensor).data();
 
       // Get the top predictions (we'll get the top 5 for now)
       const top5 = Array.from(predictions)
